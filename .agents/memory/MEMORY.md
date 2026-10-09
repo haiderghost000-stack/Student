@@ -1,0 +1,1 @@
+- [Student data storage](student-data-storage.md) — study content stays in browser storage; cross-device sync is a separate feature.

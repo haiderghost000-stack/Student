@@ -1,0 +1,301 @@
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlarmClock, ArrowLeft, BookOpen, Check, CheckCheck, Clock3,
+  FileText, Gamepad2, GraduationCap, LayoutDashboard, ListTodo, MoreHorizontal, Pause,
+  Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Timer, Trash2, Upload,
+  X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
+} from 'lucide-react';
+
+type Task = { id: string; title: string; subject: string; dueDate: string; priority: string; completed: boolean };
+type Note = { id: string; title: string; content: string; subject: string; updatedAt: string };
+type PdfMeta = { id: string; name: string; size: number; addedAt: string };
+type PdfRecord = PdfMeta & { file: File };
+type Section = 'overview' | 'tasks' | 'notes' | 'timer' | 'library' | 'games';
+type ModalMode = 'task' | 'note' | null;
+
+const navItems: { id: Section; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'overview', label: 'نظرة عامة', icon: LayoutDashboard },
+  { id: 'tasks', label: 'المهام', icon: ListTodo },
+  { id: 'notes', label: 'ملاحظاتي', icon: StickyNote },
+  { id: 'timer', label: 'مؤقّت الدراسة', icon: Timer },
+  { id: 'library', label: 'مكتبتي', icon: Library },
+  { id: 'games', label: 'استراحة ذكية', icon: Gamepad2 },
+];
+const subjects = ['الرياضيات', 'العلوم', 'اللغة العربية', 'الإنجليزية', 'التاريخ', 'أخرى'];
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function readStore<T>(key: string, fallback: T): T {
+  try { const value = localStorage.getItem(`رفيق-${key}`); return value ? JSON.parse(value) as T : fallback; } catch { return fallback; }
+}
+function usePersisted<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => readStore(key, initial));
+  useEffect(() => { localStorage.setItem(`رفيق-${key}`, JSON.stringify(value)); }, [key, value]);
+  return [value, setValue] as const;
+}
+function openPdfDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('rafiq-pdf-library', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('pdfs', { keyPath: 'id' });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function savePdf(record: PdfRecord) {
+  const db = await openPdfDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('pdfs', 'readwrite');
+    transaction.objectStore('pdfs').put(record);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+  db.close();
+}
+async function fetchPdf(id: string): Promise<PdfRecord | undefined> {
+  const db = await openPdfDb();
+  const record = await new Promise<PdfRecord | undefined>((resolve, reject) => {
+    const request = db.transaction('pdfs').objectStore('pdfs').get(id);
+    request.onsuccess = () => resolve(request.result as PdfRecord | undefined);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return record;
+}
+async function removePdf(id: string) {
+  const db = await openPdfDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction('pdfs', 'readwrite').objectStore('pdfs').delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+}
+async function listPdfs(): Promise<PdfMeta[]> {
+  const db = await openPdfDb();
+  const records = await new Promise<PdfRecord[]>((resolve, reject) => {
+    const request = db.transaction('pdfs').objectStore('pdfs').getAll();
+    request.onsuccess = () => resolve(request.result as PdfRecord[]);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return records.map(({ id, name, size, addedAt }) => ({ id, name, size, addedAt })).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+}
+const formatDate = (date = new Date()) => new Intl.DateTimeFormat('ar', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
+const formatSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} ك.ب` : `${(size / 1024 / 1024).toFixed(1)} م.ب`;
+
+function App() {
+  const [section, setSection] = useState<Section>('overview');
+  const [tasks, setTasks] = usePersisted<Task[]>('tasks', []);
+  const [notes, setNotes] = usePersisted<Note[]>('notes', []);
+  const [focusMinutes, setFocusMinutes] = usePersisted('focus-duration', 25);
+  const [breakMinutes, setBreakMinutes] = usePersisted('break-duration', 5);
+  const [stats, setStats] = usePersisted('stats', { sessions: 0, focusSeconds: 0, streak: 0, lastStudyDay: '' });
+  const [modal, setModal] = useState<ModalMode>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
+  const [taskFilter, setTaskFilter] = useState('الكل');
+  const [search, setSearch] = useState('');
+  const [pdfs, setPdfs] = useState<PdfMeta[]>([]);
+  const [activePdf, setActivePdf] = useState<PdfMeta | null>(null);
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfError, setPdfError] = useState('');
+  const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
+  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
+  const [xo, setXo] = useState<(string | null)[]>(Array(9).fill(null));
+  const [memoryPairs, setMemoryPairs] = useState(6);
+  const [memoryCards, setMemoryCards] = useState<string[]>([]);
+  const [memoryOpen, setMemoryOpen] = useState<number[]>([]);
+  const [memoryMatched, setMemoryMatched] = useState<number[]>([]);
+  const [memoryMoves, setMemoryMoves] = useState(0);
+  const pdfInput = useRef<HTMLInputElement>(null);
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    toastTimeout.current = setTimeout(() => setToast(''), 2600);
+  };
+  useEffect(() => {
+    listPdfs().then(setPdfs).catch(() => setPdfError('تعذّر فتح مكتبتك على هذا المتصفح.'));
+  }, []);
+  useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+  useEffect(() => {
+    if (!running) return;
+    const interval = setInterval(() => {
+      setSecondsLeft((value) => {
+        if (value > 1) return value - 1;
+        setRunning(false);
+        if (timerMode === 'focus') {
+          setStats((old) => {
+            const today = new Date().toISOString().slice(0, 10);
+            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+            return { sessions: old.sessions + 1, focusSeconds: old.focusSeconds + focusMinutes * 60, streak: old.lastStudyDay === today ? old.streak : old.lastStudyDay === yesterday ? old.streak + 1 : 1, lastStudyDay: today };
+          });
+          setTimerMode('break');
+          showToast('أحسنت، حان وقت استراحة قصيرة.');
+          return breakMinutes * 60;
+        }
+        setTimerMode('focus');
+        showToast('انتهت الاستراحة، مستعد لجولة جديدة؟');
+        return focusMinutes * 60;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [running, timerMode, focusMinutes, breakMinutes]);
+  useEffect(() => { if (!running) setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); }, [focusMinutes, breakMinutes, timerMode, running]);
+  const completedCount = tasks.filter((task) => task.completed).length;
+  const pendingTasks = tasks.filter((task) => !task.completed).length;
+  const todayTasks = tasks.filter((task) => task.dueDate === new Date().toISOString().slice(0, 10) && !task.completed);
+  const filteredTasks = useMemo(() => tasks.filter((task) => {
+    const matchFilter = taskFilter === 'الكل' || (taskFilter === 'قيد الإنجاز' ? !task.completed : task.completed);
+    return matchFilter && `${task.title} ${task.subject}`.includes(search.trim());
+  }), [tasks, taskFilter, search]);
+  const titleBySection: Record<Section, string> = { overview: 'نظرة عامة', tasks: 'مهامي الدراسية', notes: 'دفتر ملاحظاتي', timer: 'وقتٌ لك ولتركيزك', library: 'مكتبتي', games: 'استراحة تستحقها' };
+
+  const openModal = (mode: Exclude<ModalMode, null>, id?: string) => { setEditingId(id || null); setModal(mode); };
+  const saveTask = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const item: Task = { id: editingId || uid(), title: String(form.get('title')).trim(), subject: String(form.get('subject')), dueDate: String(form.get('dueDate')), priority: String(form.get('priority')), completed: editingId ? tasks.find((task) => task.id === editingId)?.completed || false : false };
+    if (!item.title) return;
+    setTasks((old) => editingId ? old.map((task) => task.id === editingId ? item : task) : [item, ...old]);
+    setModal(null); showToast(editingId ? 'تم تحديث المهمة.' : 'أُضيفت المهمة إلى قائمتك.');
+  };
+  const saveNote = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const item: Note = { id: editingId || uid(), title: String(form.get('title')).trim(), subject: String(form.get('subject')), content: String(form.get('content')).trim(), updatedAt: new Date().toISOString() };
+    if (!item.title) return;
+    setNotes((old) => editingId ? old.map((note) => note.id === editingId ? item : note) : [item, ...old]);
+    setModal(null); showToast(editingId ? 'تم تحديث الملاحظة.' : 'حُفظت ملاحظتك.');
+  };
+  const toggleTask = (id: string) => setTasks((old) => old.map((task) => task.id === id ? { ...task, completed: !task.completed } : task));
+  const deleteTask = (id: string) => { if (window.confirm('هل تريد حذف هذه المهمة؟')) { setTasks((old) => old.filter((task) => task.id !== id)); showToast('تم حذف المهمة.'); } };
+  const deleteNote = (id: string) => { if (window.confirm('هل تريد حذف هذه الملاحظة؟')) { setNotes((old) => old.filter((note) => note.id !== id)); showToast('تم حذف الملاحظة.'); } };
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []).filter((file) => file.type === 'application/pdf');
+    if (!files.length) { if (event.target.files?.length) showToast('اختر ملفاً بصيغة PDF.'); return; }
+    try {
+      const entries = files.map((file) => ({ id: uid(), name: file.name, size: file.size, addedAt: new Date().toISOString(), file }));
+      for (const entry of entries) await savePdf(entry);
+      setPdfs(await listPdfs()); setPdfError(''); showToast(`تمت إضافة ${entries.length} من الملفات.`);
+    } catch { setPdfError('تعذّر حفظ الملف. جرّب ملفاً أصغر أو متصفحاً حديثاً.'); }
+    event.target.value = '';
+  };
+  const selectPdf = async (pdf: PdfMeta) => {
+    try {
+      const record = await fetchPdf(pdf.id);
+      if (!record) { setPdfError('لم نعثر على الملف المحفوظ.'); return; }
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(URL.createObjectURL(record.file)); setActivePdf(pdf); setPdfError('');
+    } catch { setPdfError('تعذّر فتح الملف.'); }
+  };
+  const deletePdf = async (pdf: PdfMeta) => {
+    if (!window.confirm(`حذف «${pdf.name}» من مكتبتك؟`)) return;
+    await removePdf(pdf.id); setPdfs(await listPdfs());
+    if (activePdf?.id === pdf.id) { if (pdfUrl) URL.revokeObjectURL(pdfUrl); setPdfUrl(''); setActivePdf(null); }
+    showToast('أُزيل الملف من مكتبتك.');
+  };
+  const setMode = (mode: 'focus' | 'break') => { setRunning(false); setTimerMode(mode); setSecondsLeft((mode === 'focus' ? focusMinutes : breakMinutes) * 60); };
+  const resetTimer = () => { setRunning(false); setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); };
+  const adjustDuration = (mode: 'focus' | 'break', amount: number) => {
+    const setter = mode === 'focus' ? setFocusMinutes : setBreakMinutes;
+    setter((value: number) => Math.min(90, Math.max(1, value + amount)));
+  };
+  const timerDisplay = `${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`;
+  const makeMemory = (pairs = memoryPairs) => {
+    const symbols = ['ن', 'م', 'ع', 'ك', 'س', 'ل', 'ر', 'ت', 'ب', 'هـ'];
+    const cards = [...symbols.slice(0, pairs), ...symbols.slice(0, pairs)].sort(() => Math.random() - .5);
+    setMemoryPairs(pairs); setMemoryCards(cards); setMemoryOpen([]); setMemoryMatched([]); setMemoryMoves(0);
+  };
+  useEffect(() => { makeMemory(6); }, []);
+  const chooseMemory = (index: number) => {
+    if (memoryOpen.length >= 2 || memoryOpen.includes(index) || memoryMatched.includes(index)) return;
+    const open = [...memoryOpen, index]; setMemoryOpen(open);
+    if (open.length === 2) {
+      setMemoryMoves((value) => value + 1);
+      if (memoryCards[open[0]] === memoryCards[open[1]]) {
+        setMemoryMatched((old) => [...old, ...open]);
+        setTimeout(() => setMemoryOpen([]), 420);
+      } else setTimeout(() => setMemoryOpen([]), 850);
+    }
+  };
+  const playXo = (index: number) => {
+    if (xo[index] || xo.some((cell) => cell) && (xo.filter(Boolean).length % 2 !== 0) || xoWinner(xo)) return;
+    setXo((old) => { const next = [...old]; next[index] = old.filter(Boolean).length % 2 === 0 ? 'X' : 'O'; return next; });
+  };
+
+  const renderTasks = (compact = false) => {
+    const list = compact ? (todayTasks.length ? todayTasks : tasks.filter((task) => !task.completed)).slice(0, 4) : filteredTasks;
+    if (!list.length) return <div className="empty"><div className="empty-icon"><CheckCheck size={21} /></div><strong>{compact ? 'مساحتك تبدأ من هنا' : 'لا توجد مهام هنا الآن'}</strong><p>{compact ? 'أضف مهمة صغيرة، واجعل يومك أوضح.' : 'أضف مهمة جديدة أو جرّب تغيير خيارات البحث.'}</p>{compact && <button className="soft-btn" style={{ marginTop: 13 }} onClick={() => openModal('task')}><Plus size={15} /> إضافة أول مهمة</button>}</div>;
+    return <div className={compact ? '' : 'task-list'}>{list.map((task) => <div className="task-row" key={task.id}>
+      <button className={`check-button ${task.completed ? 'checked' : ''}`} aria-label={task.completed ? 'إلغاء إكمال المهمة' : 'إكمال المهمة'} onClick={() => toggleTask(task.id)}>{task.completed && <Check size={13} />}</button>
+      <div className="task-info"><div className={`task-name ${task.completed ? 'done' : ''}`}>{task.title}</div><div className="task-meta">{task.subject} {task.dueDate && ` · ${new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'short' }).format(new Date(`${task.dueDate}T12:00:00`))}`}</div></div>
+      <span className={`priority-label ${task.priority}`}>{task.priority}</span>
+      {!compact && <div className="row-actions"><button className="small-icon" aria-label="تعديل المهمة" onClick={() => openModal('task', task.id)}><Pencil size={14} /></button><button className="small-icon" aria-label="حذف المهمة" onClick={() => deleteTask(task.id)}><Trash2 size={14} /></button></div>}
+    </div>)}</div>;
+  };
+
+  return <div className="app-shell" dir="rtl">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark"><GraduationCap size={22} /></div><div><div className="brand-name">رَفيق</div><div className="brand-sub">رفيق رحلتك الدراسية</div></div></div>
+      <div className="nav-caption">مساحتك الدراسية</div>
+      <nav className="nav-list">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${section === id ? 'active' : ''}`} onClick={() => setSection(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span></button>)}</nav>
+      <div className="sidebar-bottom"><div className="daily-card"><strong>خطوة هادئة تكفي</strong><p>لا تحتاج أن تنجز كل شيء اليوم. اختر ما يهم وابدأ منه.</p></div><div className="profile"><div className="profile-avatar">ط</div><div><div className="profile-name">رحلتك، على مهل</div><div className="profile-caption">مساحة دراسة شخصية</div></div></div></div>
+    </aside>
+    <main className="main">
+      <header className="topbar"><div className="breadcrumb">رفيق <span style={{ margin: '0 8px', color: '#c0c9c2' }}>/</span> <b>{titleBySection[section]}</b></div><div className="top-actions"><span className="date-chip"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginLeft: 6 }} />{formatDate()}</span><button className="icon-btn" title="ابدأ مؤقّت الدراسة" onClick={() => setSection('timer')}><AlarmClock size={17} /></button></div></header>
+      <div className="page-head"><div><div className="eyebrow">{section === 'overview' ? 'مساحة صغيرة، إنجازات كبيرة' : 'مساحتك الدراسية'}</div><h1 className="page-title">{section === 'overview' ? 'أهلاً بك، لنبدأ على مهل' : titleBySection[section]}</h1><p className="page-subtitle">{section === 'overview' ? 'كل خطوة صغيرة اليوم تقرّبك مما تريد.' : section === 'tasks' ? 'رتّب ما عليك، واترك مساحة لما تحب.' : section === 'notes' ? 'أفكارك وملاحظاتك، في مكان واحد.' : section === 'timer' ? 'وقت تركيز واضح، تتبعه استراحة مستحقة.' : section === 'library' ? 'كتبك وملفاتك الدراسية قريبة منك.' : 'استراحة قصيرة تعيد ذهنك إلى صفائه.'}</p></div>
+        {(section === 'tasks' || section === 'overview') && <button className="primary-btn" onClick={() => openModal('task')}><Plus size={16} /> مهمة جديدة</button>}
+        {section === 'notes' && <button className="primary-btn" onClick={() => openModal('note')}><Plus size={16} /> ملاحظة جديدة</button>}
+      </div>
+
+      {section === 'overview' && <div className="content">
+        <section className="overview-hero"><div className="hero-copy"><div className="eyebrow">مساء الخير، مسيرتك تستحق التقدير</div><h2 className="hero-title">خطوة واحدة بتركيز،<br /><span>تُحدث فرقاً.</span></h2><p className="hero-text">رتّب أولوياتك، خذ نفساً عميقاً، وامنح نفسك فرصة لتتعلم بطريقتك.</p><button className="hero-link" onClick={() => setSection('timer')}><Play size={14} /> ابدأ جلسة تركيز</button></div><div className="hero-orbit"><div className="hero-orbit-inner"><Sparkles size={27} /></div></div></section>
+        <section className="stats-grid">
+          {[{ label: 'مهام متبقية', value: pendingTasks, icon: Target, color: '#e6f0e8', ink: '#59806d' }, { label: 'أُنجزت هذا اليوم', value: completedCount, icon: CheckCheck, color: '#f5efdf', ink: '#ac8b4c' }, { label: 'جلسات تركيز', value: stats.sessions, icon: Clock3, color: '#e8edf0', ink: '#6b8590' }, { label: 'أيام متتابعة', value: stats.streak, icon: Flame, color: '#f5e9e4', ink: '#b57867' }].map((stat) => <div className="panel stat-card" key={stat.label}><div className="stat-icon" style={{ background: stat.color, color: stat.ink }}><stat.icon size={19} /></div><div><div className="stat-value">{stat.value}</div><div className="stat-label">{stat.label}</div></div></div>)}
+        </section>
+        <div className="overview-columns">
+          <section className="panel section-panel"><div className="section-heading"><h2>على قائمة اليوم</h2><button className="text-link" onClick={() => setSection('tasks')}>كل المهام <ArrowLeft size={14} /></button></div>{todayTasks.length ? renderTasks(true) : renderTasks(true)}</section>
+          <section className="panel section-panel"><div className="section-heading"><h2>ملاحظاتك الأخيرة</h2><button className="text-link" onClick={() => setSection('notes')}>دفتر الملاحظات <ArrowLeft size={14} /></button></div>{notes.length ? notes.slice(0, 2).map((note) => <div className="mini-note" key={note.id}><span className="note-subject">{note.subject}</span><h3>{note.title}</h3><p>{note.content || 'مساحة فارغة لفكرة جديدة.'}</p></div>) : <div className="empty"><div className="empty-icon"><NotebookPen size={20} /></div><strong>أفكارك لها مكان</strong><p>اكتب ملاحظة سريعة قبل أن تفوتك.</p><button className="text-link" style={{ margin: '12px auto 0' }} onClick={() => openModal('note')}><Plus size={14} /> أضف ملاحظة</button></div>}</section>
+        </div>
+      </div>}
+
+      {section === 'tasks' && <div className="content">
+        <div className="toolbar" style={{ justifyContent: 'space-between', marginBottom: 15 }}><div className="filters">{['الكل', 'قيد الإنجاز', 'مكتملة'].map((filter) => <button key={filter} className={`filter-btn ${taskFilter === filter ? 'active' : ''}`} onClick={() => setTaskFilter(filter)}>{filter}</button>)}</div><label className="search-input" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Search size={15} color="#9ba8a1" /><input aria-label="ابحث عن مهمة" data-testid="input-search-tasks" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ابحث عن مهمة أو مادة" style={{ border: 0, outline: 0, background: 'transparent', width: 170, fontSize: 12 }} /></label></div>
+        <div className="panel">{renderTasks()}</div>
+        {tasks.length > 0 && <div style={{ color: '#92a099', fontSize: 11, padding: '13px 4px' }}>أنجزت {completedCount} من أصل {tasks.length} مهمة</div>}
+      </div>}
+
+      {section === 'notes' && <div className="content">{notes.length ? <div className="notes-grid">{notes.map((note) => <article key={note.id} className="panel note-card" onClick={() => openModal('note', note.id)}><div className="note-card-top"><span className="note-subject">{note.subject}</span><button className="small-icon" aria-label="حذف الملاحظة" onClick={(event) => { event.stopPropagation(); deleteNote(note.id); }}><Trash2 size={14} /></button></div><h3>{note.title}</h3><p className="note-preview">{note.content || 'لا يوجد نص بعد.'}</p><div className="note-date">آخر تحديث · {new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'long' }).format(new Date(note.updatedAt))}</div></article>)}</div> : <div className="panel"><div className="empty"><div className="empty-icon"><StickyNote size={21} /></div><strong>دفترك ما زال ينتظر أول فكرة</strong><p>دوّن شرحاً، سؤالاً أو فكرة تخشى أن تنساها.</p><button className="primary-btn" style={{ marginTop: 16 }} onClick={() => openModal('note')}><Plus size={15} /> اكتب ملاحظة</button></div></div>}</div>}
+
+      {section === 'timer' && <div className="content timer-layout">
+        <section className="panel timer-main"><div className="timer-core"><div className="mode-switch"><button className={timerMode === 'focus' ? 'active' : ''} onClick={() => setMode('focus')}>تركيز</button><button className={timerMode === 'break' ? 'active' : ''} onClick={() => setMode('break')}>استراحة</button></div><div className="timer-display">{timerDisplay}</div><div className="timer-caption">{running ? timerMode === 'focus' ? 'أنت في جلسة تركيز، أحسنت.' : 'خذ نفساً عميقاً.' : 'كل دقيقة تمنحها لنفسك تستحق.'}</div><div className="timer-actions"><button className="round-btn" aria-label="إعادة ضبط المؤقت" onClick={resetTimer}><RotateCcw size={17} /></button><button className="round-btn play" aria-label={running ? 'إيقاف مؤقت' : 'ابدأ المؤقت'} onClick={() => setRunning((value) => !value)}>{running ? <Pause size={19} /> : <Play size={19} />}</button><button className="round-btn" aria-label="انتقل إلى الوضع التالي" onClick={() => setMode(timerMode === 'focus' ? 'break' : 'focus')}><ArrowLeft size={17} /></button></div></div></section>
+        <section className="panel timer-settings"><div className="section-heading"><h2>تخصيص وقتك</h2><Settings2 size={17} color="#81948a" /></div>{([{ mode: 'focus' as const, label: 'مدة التركيز', value: focusMinutes }, { mode: 'break' as const, label: 'مدة الاستراحة', value: breakMinutes }]).map((item) => <div className="duration-row" key={item.mode}><span>{item.label}</span><div className="duration-control"><button aria-label={`تقليل ${item.label}`} onClick={() => adjustDuration(item.mode, -1)}><Minus size={13} /></button><b>{item.value}</b><button aria-label={`زيادة ${item.label}`} onClick={() => adjustDuration(item.mode, 1)}><Plus size={13} /></button><small style={{ color: '#94a19a' }}>دقيقة</small></div></div>)}<div className="session-info"><Clock3 size={14} style={{ verticalAlign: 'middle', marginLeft: 5 }} /> عند انتهاء المؤقت ينتقل تلقائياً إلى الوضع التالي. سيتم حفظ تفضيلاتك وجلساتك على هذا الجهاز.</div><div style={{ marginTop: 17, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8b9a92' }}><span>جلسات مكتملة</span><strong style={{ color: '#587a6d' }}>{stats.sessions}</strong></div></section>
+      </div>}
+
+      {section === 'library' && <div className="content pdf-layout">
+        <section className="panel pdf-list"><input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} /><button className="upload-zone" style={{ width: '100%' }} onClick={() => pdfInput.current?.click()}><Upload size={19} /><strong>أضف ملفاً إلى مكتبتك</strong><span>ملفات PDF محفوظة على جهازك</span></button>{pdfError && <div style={{ fontSize: 11, color: '#ad695c', padding: '2px 4px 8px' }}>{pdfError}</div>}<div className="section-heading" style={{ marginBottom: 7 }}><h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2><MoreHorizontal size={17} color="#9aa69f" /></div>{pdfs.length ? pdfs.map((pdf) => <div key={pdf.id} className={`pdf-row ${activePdf?.id === pdf.id ? 'active' : ''}`}><button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}><span className="pdf-icon"><FileText size={17} /></span><span className="pdf-row-info"><span className="pdf-name">{pdf.name}</span><span className="pdf-meta">{formatSize(pdf.size)}</span></span></button><button className="small-icon" aria-label="حذف الملف" onClick={() => deletePdf(pdf)}><Trash2 size={13} /></button></div>) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}</section>
+        <section className="panel pdf-viewer">{activePdf && pdfUrl ? <><div className="viewer-toolbar"><strong>{activePdf.name}</strong><button className="small-icon" aria-label="إغلاق الملف" onClick={() => { setActivePdf(null); setPdfUrl(''); }}><X size={16} /></button></div><iframe className="pdf-frame" src={pdfUrl} title={`قارئ ${activePdf.name}`} /></> : <div className="viewer-empty"><div className="empty"><div className="empty-icon"><BookOpen size={21} /></div><strong>مساحة القراءة الهادئة</strong><p>اختر ملفاً من مكتبتك، أو أضف كتاباً دراسياً لقراءته هنا.</p></div></div>}</section>
+      </div>}
+
+      {section === 'games' && <div className="content games-grid">
+        <section className="panel game-card"><div className="section-heading" style={{ marginBottom: 0 }}><h2>إكس-أو</h2><button className="small-icon" aria-label="بدء جولة جديدة" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={15} /></button></div><p className="game-subtitle">جولة خفيفة بينك وبين صديق، بالتناوب.</p><p className="xo-status">{xoWinner(xo) ? `الفائز: ${xoWinner(xo)}` : xo.every(Boolean) ? 'تعادل جميل.' : `الدور على ${xo.filter(Boolean).length % 2 === 0 ? 'X' : 'O'}`}</p><div className="xo-board">{xo.map((cell, index) => <button key={index} className="xo-cell" onClick={() => playXo(index)} disabled={Boolean(cell) || Boolean(xoWinner(xo)) || xo.every(Boolean)} aria-label={`المربع ${index + 1}`}>{cell}</button>)}</div><div className="games-footer"><button className="soft-btn" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={14} /> جولة جديدة</button></div></section>
+        <section className="panel game-card"><div className="section-heading" style={{ marginBottom: 0 }}><h2>ذاكرة هادئة</h2><button className="small-icon" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><p className="game-subtitle">اعثر على كل زوج متشابه بأقل عدد من المحاولات.</p><div className="memory-top"><span>المحاولات: {memoryMoves}</span><label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>الأزواج <select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))} style={{ width: 72, padding: '5px 7px', fontSize: 11 }}><option value={4}>٤</option><option value={6}>٦</option><option value={8}>٨</option></select></label></div><div className="memory-grid">{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${memoryMatched.includes(index) ? 'matched' : ''}`} onClick={() => chooseMemory(index)} aria-label={open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}>{open ? symbol : ''}</button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span style={{ fontSize: 12, color: '#638372', marginLeft: 10 }}>أحسنت، وجدت كل الأزواج.</span>}<button className="soft-btn" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
+      </div>}
+    </main>
+    <nav className="mobile-nav">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
+    {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><h2 id="modal-title">{modal === 'task' ? editingId ? 'تعديل المهمة' : 'مهمة جديدة' : editingId ? 'تعديل الملاحظة' : 'ملاحظة جديدة'}</h2><button className="small-icon" aria-label="إغلاق النافذة" onClick={() => setModal(null)}><X size={17} /></button></div>
+      {modal === 'task' && <form onSubmit={saveTask}><div className="form-grid"><div className="form-field full"><label htmlFor="task-title">عنوان المهمة</label><input id="task-title" name="title" className="field" required defaultValue={tasks.find((task) => task.id === editingId)?.title || ''} placeholder="مثال: حل مسائل الفصل الثالث" /></div><div className="form-field"><label htmlFor="task-subject">المادة</label><select id="task-subject" name="subject" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.subject || subjects[0]}>{subjects.map((subject) => <option key={subject}>{subject}</option>)}</select></div><div className="form-field"><label htmlFor="task-date">موعد الإنجاز</label><input id="task-date" name="dueDate" type="date" className="field" defaultValue={tasks.find((task) => task.id === editingId)?.dueDate || ''} /></div><div className="form-field full"><label htmlFor="task-priority">الأولوية</label><select id="task-priority" name="priority" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.priority || 'متوسطة'}><option>عالية</option><option>متوسطة</option><option>منخفضة</option></select></div></div><div className="modal-actions"><button className="primary-btn" type="submit"><Check size={15} /> حفظ المهمة</button><button type="button" className="soft-btn" onClick={() => setModal(null)}>إلغاء</button></div></form>}
+      {modal === 'note' && <form onSubmit={saveNote}><div className="form-grid"><div className="form-field full"><label htmlFor="note-title">عنوان الملاحظة</label><input id="note-title" name="title" className="field" required defaultValue={notes.find((note) => note.id === editingId)?.title || ''} placeholder="فكرة تستحق أن تبقى" /></div><div className="form-field full"><label htmlFor="note-subject">المادة</label><select id="note-subject" name="subject" className="select-field" defaultValue={notes.find((note) => note.id === editingId)?.subject || subjects[0]}>{subjects.map((subject) => <option key={subject}>{subject}</option>)}</select></div><div className="form-field full"><label htmlFor="note-content">محتوى الملاحظة</label><textarea id="note-content" name="content" className="text-field" defaultValue={notes.find((note) => note.id === editingId)?.content || ''} placeholder="اكتب شرحاً مختصراً، سؤالاً، أو أي شيء تريد تذكره..." /></div></div><div className="modal-actions"><button className="primary-btn" type="submit"><Check size={15} /> حفظ الملاحظة</button><button type="button" className="soft-btn" onClick={() => setModal(null)}>إلغاء</button></div></form>}
+    </section></div>}
+    {toast && <div className="toast-message" role="status">{toast}</div>}
+  </div>;
+}
+
+function xoWinner(board: (string | null)[]) {
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  for (const [a, b, c] of lines) if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+  return null;
+}
+
+export default App;
