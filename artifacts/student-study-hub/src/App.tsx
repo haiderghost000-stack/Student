@@ -2,7 +2,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState 
 import {
   AlarmClock, ArrowLeft, BookOpen, Check, CheckCheck, Clock3,
   FileText, Gamepad2, GraduationCap, LayoutDashboard, ListTodo, MoreHorizontal, Pause,
-  Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Timer, Trash2, Upload,
+  Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload,
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
 
@@ -85,6 +85,7 @@ function App() {
   const [section, setSection] = useState<Section>('overview');
   const [tasks, setTasks] = usePersisted<Task[]>('tasks', []);
   const [notes, setNotes] = usePersisted<Note[]>('notes', []);
+  const [theme, setTheme] = usePersisted<'light' | 'dark'>('theme', 'light');
   const [focusMinutes, setFocusMinutes] = usePersisted('focus-duration', 25);
   const [breakMinutes, setBreakMinutes] = usePersisted('break-duration', 5);
   const [stats, setStats] = usePersisted('stats', { sessions: 0, focusSeconds: 0, streak: 0, lastStudyDay: '' });
@@ -220,7 +221,7 @@ function App() {
     }
   };
   const playXo = (index: number) => {
-    if (xo[index] || xo.some((cell) => cell) && (xo.filter(Boolean).length % 2 !== 0) || xoWinner(xo)) return;
+    if (xo[index] || xo.every(Boolean) || xoWinner(xo)) return;
     setXo((old) => { const next = [...old]; next[index] = old.filter(Boolean).length % 2 === 0 ? 'X' : 'O'; return next; });
   };
 
@@ -235,7 +236,7 @@ function App() {
     </div>)}</div>;
   };
 
-  return <div className="app-shell" dir="rtl">
+  return <div className="app-shell" data-theme={theme} dir="rtl">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><GraduationCap size={22} /></div><div><div className="brand-name">رَفيق</div><div className="brand-sub">رفيق رحلتك الدراسية</div></div></div>
       <div className="nav-caption">مساحتك الدراسية</div>
@@ -243,7 +244,7 @@ function App() {
       <div className="sidebar-bottom"><div className="daily-card"><strong>خطوة هادئة تكفي</strong><p>لا تحتاج أن تنجز كل شيء اليوم. اختر ما يهم وابدأ منه.</p></div><div className="profile"><div className="profile-avatar">ط</div><div><div className="profile-name">رحلتك، على مهل</div><div className="profile-caption">مساحة دراسة شخصية</div></div></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="breadcrumb">رفيق <span style={{ margin: '0 8px', color: '#c0c9c2' }}>/</span> <b>{titleBySection[section]}</b></div><div className="top-actions"><span className="date-chip"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginLeft: 6 }} />{formatDate()}</span><button className="icon-btn" title="ابدأ مؤقّت الدراسة" onClick={() => setSection('timer')}><AlarmClock size={17} /></button></div></header>
+      <header className="topbar"><div className="breadcrumb">رفيق <span style={{ margin: '0 8px', color: '#c0c9c2' }}>/</span> <b>{titleBySection[section]}</b></div><div className="top-actions"><span className="date-chip"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginLeft: 6 }} />{formatDate()}</span><button className="icon-btn" title="ابدأ مؤقّت الدراسة" aria-label="ابدأ مؤقّت الدراسة" onClick={() => setSection('timer')}><AlarmClock size={17} /></button><button className="icon-btn theme-toggle" title={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-pressed={theme === 'dark'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
       <div className="page-head"><div><div className="eyebrow">{section === 'overview' ? 'مساحة صغيرة، إنجازات كبيرة' : 'مساحتك الدراسية'}</div><h1 className="page-title">{section === 'overview' ? 'أهلاً بك، لنبدأ على مهل' : titleBySection[section]}</h1><p className="page-subtitle">{section === 'overview' ? 'كل خطوة صغيرة اليوم تقرّبك مما تريد.' : section === 'tasks' ? 'رتّب ما عليك، واترك مساحة لما تحب.' : section === 'notes' ? 'أفكارك وملاحظاتك، في مكان واحد.' : section === 'timer' ? 'وقت تركيز واضح، تتبعه استراحة مستحقة.' : section === 'library' ? 'كتبك وملفاتك الدراسية قريبة منك.' : 'استراحة قصيرة تعيد ذهنك إلى صفائه.'}</p></div>
         {(section === 'tasks' || section === 'overview') && <button className="primary-btn" onClick={() => openModal('task')}><Plus size={16} /> مهمة جديدة</button>}
         {section === 'notes' && <button className="primary-btn" onClick={() => openModal('note')}><Plus size={16} /> ملاحظة جديدة</button>}
@@ -279,8 +280,9 @@ function App() {
       </div>}
 
       {section === 'games' && <div className="content games-grid">
-        <section className="panel game-card"><div className="section-heading" style={{ marginBottom: 0 }}><h2>إكس-أو</h2><button className="small-icon" aria-label="بدء جولة جديدة" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={15} /></button></div><p className="game-subtitle">جولة خفيفة بينك وبين صديق، بالتناوب.</p><p className="xo-status">{xoWinner(xo) ? `الفائز: ${xoWinner(xo)}` : xo.every(Boolean) ? 'تعادل جميل.' : `الدور على ${xo.filter(Boolean).length % 2 === 0 ? 'X' : 'O'}`}</p><div className="xo-board">{xo.map((cell, index) => <button key={index} className="xo-cell" onClick={() => playXo(index)} disabled={Boolean(cell) || Boolean(xoWinner(xo)) || xo.every(Boolean)} aria-label={`المربع ${index + 1}`}>{cell}</button>)}</div><div className="games-footer"><button className="soft-btn" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={14} /> جولة جديدة</button></div></section>
-        <section className="panel game-card"><div className="section-heading" style={{ marginBottom: 0 }}><h2>ذاكرة هادئة</h2><button className="small-icon" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><p className="game-subtitle">اعثر على كل زوج متشابه بأقل عدد من المحاولات.</p><div className="memory-top"><span>المحاولات: {memoryMoves}</span><label style={{ display: 'flex', alignItems: 'center', gap: 7 }}>الأزواج <select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))} style={{ width: 72, padding: '5px 7px', fontSize: 11 }}><option value={4}>٤</option><option value={6}>٦</option><option value={8}>٨</option></select></label></div><div className="memory-grid">{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${memoryMatched.includes(index) ? 'matched' : ''}`} onClick={() => chooseMemory(index)} aria-label={open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}>{open ? symbol : ''}</button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span style={{ fontSize: 12, color: '#638372', marginLeft: 10 }}>أحسنت، وجدت كل الأزواج.</span>}<button className="soft-btn" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
+        <section className="games-welcome"><div><span className="game-kicker"><Sparkles size={14} /> استراحة قصيرة</span><h2>جدّد نشاطك بلعبة خفيفة</h2><p>اختر لعبتك، خذ نفساً، ثم عُد إلى دراستك بذهن أصفى.</p></div><div className="games-welcome-icon"><Gamepad2 size={26} /></div></section>
+        <section className="panel game-card xo-game"><div className="game-heading"><div className="game-heading-icon xo-icon"><Target size={18} /></div><div className="game-heading-copy"><h2>إكس-أو</h2><p>جولة سريعة مع صديق</p></div><button className="small-icon game-reset" aria-label="بدء جولة جديدة" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={15} /></button></div><div className={`xo-turn ${xoWinner(xo) ? 'finished' : ''}`}><span className="turn-dot" />{xoWinner(xo) ? `الفائز: ${xoWinner(xo)}` : xo.every(Boolean) ? 'تعادل جميل.' : <>الدور على <b className={`turn-mark ${xo.filter(Boolean).length % 2 === 0 ? 'x-mark' : 'o-mark'}`}>{xo.filter(Boolean).length % 2 === 0 ? 'X' : 'O'}</b></>}</div><div className="xo-board">{xo.map((cell, index) => <button key={index} className={`xo-cell ${cell === 'X' ? 'x-mark' : ''} ${cell === 'O' ? 'o-mark' : ''}`} onClick={() => playXo(index)} disabled={Boolean(cell) || Boolean(xoWinner(xo)) || xo.every(Boolean)} aria-label={`المربع ${index + 1}${cell ? `، ${cell}` : ''}`}>{cell}</button>)}</div><div className="games-footer"><span className="game-hint">تتناوبان حتى يكتمل الصف</span><button className="game-action" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={14} /> جولة جديدة</button></div></section>
+        <section className="panel game-card memory-game"><div className="game-heading"><div className="game-heading-icon memory-icon"><Sparkles size={18} /></div><div className="game-heading-copy"><h2>لعبة الذاكرة</h2><p>اقلب البطاقات وابحث عن الأزواج</p></div><button className="small-icon game-reset" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><div className="memory-stats"><div className="memory-stat"><span>المحاولات</span><b>{memoryMoves}</b></div><div className="memory-stat"><span>الأزواج</span><b>{memoryMatched.length / 2}<i> / {memoryPairs}</i></b></div><label className="pair-picker">المستوى<select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))}><option value={4}>سهل</option><option value={6}>متوسط</option><option value={8}>تحدّي</option></select></label></div><div className="memory-progress" aria-label={`تم العثور على ${memoryMatched.length / 2} من ${memoryPairs} أزواج`}><span style={{ width: `${memoryCards.length ? (memoryMatched.length / memoryCards.length) * 100 : 0}%` }} /></div><div className={`memory-grid pairs-${memoryPairs}`}>{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); const matched = memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${matched ? 'matched' : ''}`} onClick={() => chooseMemory(index)} disabled={matched} aria-pressed={open} aria-label={matched ? `زوج مكتمل، بطاقة ${symbol}` : open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}><span className="memory-face" aria-hidden="true">{open ? symbol : <Sparkles size={18} />}</span></button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span className="memory-win"><Check size={14} /> أحسنت، وجدت كل الأزواج!</span>}<button className="game-action" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
       </div>}
     </main>
     <nav className="mobile-nav">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
