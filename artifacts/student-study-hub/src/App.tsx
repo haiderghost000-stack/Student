@@ -1,15 +1,17 @@
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlarmClock, ArrowLeft, BookOpen, Check, CheckCheck, Clock3,
+  AlarmClock, ArrowLeft, BookOpen, Calculator, Check, CheckCheck, Clock3,
   FileText, Gamepad2, GraduationCap, LayoutDashboard, ListTodo, MoreHorizontal, Pause,
-  Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload,
+  Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload, Zap,
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
+const PdfReader = lazy(() => import('./PdfReader'));
 
 type Task = { id: string; title: string; subject: string; dueDate: string; priority: string; completed: boolean };
 type Note = { id: string; title: string; content: string; subject: string; updatedAt: string };
 type PdfMeta = { id: string; name: string; size: number; addedAt: string };
 type PdfRecord = PdfMeta & { file: File };
+type MathQuestion = { first: number; second: number; operation: '+' | '−' | '×'; answer: number; options: number[] };
 type Section = 'overview' | 'tasks' | 'notes' | 'timer' | 'library' | 'games';
 type ModalMode = 'task' | 'note' | null;
 
@@ -80,6 +82,19 @@ async function listPdfs(): Promise<PdfMeta[]> {
 }
 const formatDate = (date = new Date()) => new Intl.DateTimeFormat('ar', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
 const formatSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} ك.ب` : `${(size / 1024 / 1024).toFixed(1)} م.ب`;
+function createMathQuestion(): MathQuestion {
+  const operation = (['+', '−', '×'] as const)[Math.floor(Math.random() * 3)];
+  let first = Math.floor(Math.random() * 12) + 2;
+  let second = Math.floor(Math.random() * 10) + 2;
+  if (operation === '−' && second > first) [first, second] = [second, first];
+  const answer = operation === '+' ? first + second : operation === '−' ? first - second : first * second;
+  const options = new Set([answer]);
+  while (options.size < 4) {
+    const offset = Math.floor(Math.random() * 15) - 7;
+    options.add(Math.max(0, answer + (offset === 0 ? 8 : offset)));
+  }
+  return { first, second, operation, answer, options: Array.from(options).sort(() => Math.random() - 0.5) };
+}
 
 function App() {
   const [section, setSection] = useState<Section>('overview');
@@ -96,7 +111,7 @@ function App() {
   const [search, setSearch] = useState('');
   const [pdfs, setPdfs] = useState<PdfMeta[]>([]);
   const [activePdf, setActivePdf] = useState<PdfMeta | null>(null);
-  const [pdfUrl, setPdfUrl] = useState('');
+  const [activePdfFile, setActivePdfFile] = useState<Blob | null>(null);
   const [pdfError, setPdfError] = useState('');
   const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
@@ -107,8 +122,17 @@ function App() {
   const [memoryOpen, setMemoryOpen] = useState<number[]>([]);
   const [memoryMatched, setMemoryMatched] = useState<number[]>([]);
   const [memoryMoves, setMemoryMoves] = useState(0);
+  const [mathQuestion, setMathQuestion] = useState<MathQuestion>(() => createMathQuestion());
+  const [mathFeedback, setMathFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [mathAnswer, setMathAnswer] = useState<number | null>(null);
+  const [mathScore, setMathScore] = useState(0);
+  const [mathStreak, setMathStreak] = useState(0);
+  const [reactionStage, setReactionStage] = useState<'idle' | 'waiting' | 'ready' | 'result' | 'early'>('idle');
+  const [reactionTime, setReactionTime] = useState<number | null>(null);
+  const [reactionBest, setReactionBest] = useState<number | null>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reactionReadyAt = useRef(0);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -118,7 +142,14 @@ function App() {
   useEffect(() => {
     listPdfs().then(setPdfs).catch(() => setPdfError('تعذّر فتح مكتبتك على هذا المتصفح.'));
   }, []);
-  useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+  useEffect(() => {
+    if (reactionStage !== 'waiting') return;
+    const timeout = setTimeout(() => {
+      reactionReadyAt.current = performance.now();
+      setReactionStage('ready');
+    }, 1300 + Math.random() * 2200);
+    return () => clearTimeout(timeout);
+  }, [reactionStage]);
   useEffect(() => {
     if (!running) return;
     const interval = setInterval(() => {
@@ -173,7 +204,7 @@ function App() {
   const deleteTask = (id: string) => { if (window.confirm('هل تريد حذف هذه المهمة؟')) { setTasks((old) => old.filter((task) => task.id !== id)); showToast('تم حذف المهمة.'); } };
   const deleteNote = (id: string) => { if (window.confirm('هل تريد حذف هذه الملاحظة؟')) { setNotes((old) => old.filter((note) => note.id !== id)); showToast('تم حذف الملاحظة.'); } };
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []).filter((file) => file.type === 'application/pdf');
+    const files = Array.from(event.target.files || []).filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
     if (!files.length) { if (event.target.files?.length) showToast('اختر ملفاً بصيغة PDF.'); return; }
     try {
       const entries = files.map((file) => ({ id: uid(), name: file.name, size: file.size, addedAt: new Date().toISOString(), file }));
@@ -186,14 +217,13 @@ function App() {
     try {
       const record = await fetchPdf(pdf.id);
       if (!record) { setPdfError('لم نعثر على الملف المحفوظ.'); return; }
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-      setPdfUrl(URL.createObjectURL(record.file)); setActivePdf(pdf); setPdfError('');
+      setActivePdfFile(record.file); setActivePdf(pdf); setPdfError('');
     } catch { setPdfError('تعذّر فتح الملف.'); }
   };
   const deletePdf = async (pdf: PdfMeta) => {
     if (!window.confirm(`حذف «${pdf.name}» من مكتبتك؟`)) return;
     await removePdf(pdf.id); setPdfs(await listPdfs());
-    if (activePdf?.id === pdf.id) { if (pdfUrl) URL.revokeObjectURL(pdfUrl); setPdfUrl(''); setActivePdf(null); }
+    if (activePdf?.id === pdf.id) { setActivePdfFile(null); setActivePdf(null); }
     showToast('أُزيل الملف من مكتبتك.');
   };
   const setMode = (mode: 'focus' | 'break') => { setRunning(false); setTimerMode(mode); setSecondsLeft((mode === 'focus' ? focusMinutes : breakMinutes) * 60); };
@@ -219,6 +249,24 @@ function App() {
         setTimeout(() => setMemoryOpen([]), 420);
       } else setTimeout(() => setMemoryOpen([]), 850);
     }
+  };
+  const chooseMathAnswer = (answer: number) => {
+    if (mathFeedback) return;
+    const correct = answer === mathQuestion.answer;
+    setMathAnswer(answer);
+    setMathFeedback(correct ? 'correct' : 'wrong');
+    if (correct) { setMathScore((score) => score + 1); setMathStreak((streak) => streak + 1); }
+    else setMathStreak(0);
+  };
+  const nextMathQuestion = () => { setMathQuestion(createMathQuestion()); setMathFeedback(null); setMathAnswer(null); };
+  const handleReactionTap = () => {
+    if (reactionStage === 'waiting') { setReactionStage('early'); return; }
+    if (reactionStage === 'ready') {
+      const time = Math.round(performance.now() - reactionReadyAt.current);
+      setReactionTime(time); setReactionBest((best) => best === null || time < best ? time : best); setReactionStage('result');
+      return;
+    }
+    setReactionTime(null); setReactionStage('waiting');
   };
   const playXo = (index: number) => {
     if (xo[index] || xo.every(Boolean) || xoWinner(xo)) return;
@@ -276,13 +324,15 @@ function App() {
 
       {section === 'library' && <div className="content pdf-layout">
         <section className="panel pdf-list"><input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} /><button className="upload-zone" style={{ width: '100%' }} onClick={() => pdfInput.current?.click()}><Upload size={19} /><strong>أضف ملفاً إلى مكتبتك</strong><span>ملفات PDF محفوظة على جهازك</span></button>{pdfError && <div style={{ fontSize: 11, color: '#ad695c', padding: '2px 4px 8px' }}>{pdfError}</div>}<div className="section-heading" style={{ marginBottom: 7 }}><h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2><MoreHorizontal size={17} color="#9aa69f" /></div>{pdfs.length ? pdfs.map((pdf) => <div key={pdf.id} className={`pdf-row ${activePdf?.id === pdf.id ? 'active' : ''}`}><button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}><span className="pdf-icon"><FileText size={17} /></span><span className="pdf-row-info"><span className="pdf-name">{pdf.name}</span><span className="pdf-meta">{formatSize(pdf.size)}</span></span></button><button className="small-icon" aria-label="حذف الملف" onClick={() => deletePdf(pdf)}><Trash2 size={13} /></button></div>) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}</section>
-        <section className="panel pdf-viewer">{activePdf && pdfUrl ? <><div className="viewer-toolbar"><strong>{activePdf.name}</strong><button className="small-icon" aria-label="إغلاق الملف" onClick={() => { setActivePdf(null); setPdfUrl(''); }}><X size={16} /></button></div><iframe className="pdf-frame" src={pdfUrl} title={`قارئ ${activePdf.name}`} /></> : <div className="viewer-empty"><div className="empty"><div className="empty-icon"><BookOpen size={21} /></div><strong>مساحة القراءة الهادئة</strong><p>اختر ملفاً من مكتبتك، أو أضف كتاباً دراسياً لقراءته هنا.</p></div></div>}</section>
+        <section className="panel pdf-viewer">{activePdf && activePdfFile ? <><div className="viewer-toolbar"><strong title={activePdf.name}>{activePdf.name}</strong><button className="small-icon" aria-label="إغلاق الملف" onClick={() => { setActivePdfFile(null); setActivePdf(null); }}><X size={16} /></button></div><Suspense fallback={<div className="pdf-reader-suspense" role="status">جارٍ تجهيز قارئ PDF…</div>}><PdfReader key={activePdf.id} file={activePdfFile} /></Suspense></> : <div className="viewer-empty"><div className="empty"><div className="empty-icon"><BookOpen size={21} /></div><strong>مساحة القراءة الهادئة</strong><p>اختر ملفاً من مكتبتك، أو أضف كتاباً دراسياً لقراءته هنا.</p></div></div>}</section>
       </div>}
 
       {section === 'games' && <div className="content games-grid">
         <section className="games-welcome"><div><span className="game-kicker"><Sparkles size={14} /> استراحة قصيرة</span><h2>جدّد نشاطك بلعبة خفيفة</h2><p>اختر لعبتك، خذ نفساً، ثم عُد إلى دراستك بذهن أصفى.</p></div><div className="games-welcome-icon"><Gamepad2 size={26} /></div></section>
         <section className="panel game-card xo-game"><div className="game-heading"><div className="game-heading-icon xo-icon"><Target size={18} /></div><div className="game-heading-copy"><h2>إكس-أو</h2><p>جولة سريعة مع صديق</p></div><button className="small-icon game-reset" aria-label="بدء جولة جديدة" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={15} /></button></div><div className={`xo-turn ${xoWinner(xo) ? 'finished' : ''}`}><span className="turn-dot" />{xoWinner(xo) ? `الفائز: ${xoWinner(xo)}` : xo.every(Boolean) ? 'تعادل جميل.' : <>الدور على <b className={`turn-mark ${xo.filter(Boolean).length % 2 === 0 ? 'x-mark' : 'o-mark'}`}>{xo.filter(Boolean).length % 2 === 0 ? 'X' : 'O'}</b></>}</div><div className="xo-board">{xo.map((cell, index) => <button key={index} className={`xo-cell ${cell === 'X' ? 'x-mark' : ''} ${cell === 'O' ? 'o-mark' : ''}`} onClick={() => playXo(index)} disabled={Boolean(cell) || Boolean(xoWinner(xo)) || xo.every(Boolean)} aria-label={`المربع ${index + 1}${cell ? `، ${cell}` : ''}`}>{cell}</button>)}</div><div className="games-footer"><span className="game-hint">تتناوبان حتى يكتمل الصف</span><button className="game-action" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={14} /> جولة جديدة</button></div></section>
         <section className="panel game-card memory-game"><div className="game-heading"><div className="game-heading-icon memory-icon"><Sparkles size={18} /></div><div className="game-heading-copy"><h2>لعبة الذاكرة</h2><p>اقلب البطاقات وابحث عن الأزواج</p></div><button className="small-icon game-reset" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><div className="memory-stats"><div className="memory-stat"><span>المحاولات</span><b>{memoryMoves}</b></div><div className="memory-stat"><span>الأزواج</span><b>{memoryMatched.length / 2}<i> / {memoryPairs}</i></b></div><label className="pair-picker">المستوى<select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))}><option value={4}>سهل</option><option value={6}>متوسط</option><option value={8}>تحدّي</option></select></label></div><div className="memory-progress" aria-label={`تم العثور على ${memoryMatched.length / 2} من ${memoryPairs} أزواج`}><span style={{ width: `${memoryCards.length ? (memoryMatched.length / memoryCards.length) * 100 : 0}%` }} /></div><div className={`memory-grid pairs-${memoryPairs}`}>{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); const matched = memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${matched ? 'matched' : ''}`} onClick={() => chooseMemory(index)} disabled={matched} aria-pressed={open} aria-label={matched ? `زوج مكتمل، بطاقة ${symbol}` : open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}><span className="memory-face" aria-hidden="true">{open ? symbol : <Sparkles size={18} />}</span></button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span className="memory-win"><Check size={14} /> أحسنت، وجدت كل الأزواج!</span>}<button className="game-action" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
+        <section className="panel game-card math-game"><div className="game-heading"><div className="game-heading-icon math-icon"><Calculator size={18} /></div><div className="game-heading-copy"><h2>تحدّي الحساب</h2><p>أسئلة سريعة لتنشيط ذهنك</p></div><button className="small-icon game-reset" aria-label="إعادة نقاط تحدي الحساب" onClick={() => { setMathScore(0); setMathStreak(0); nextMathQuestion(); }}><RotateCcw size={15} /></button></div><div className="math-score-row"><span>إجابات صحيحة <b>{mathScore}</b></span><span>متتالية <b>{mathStreak}</b></span></div><div className="math-question-box"><span>أوجد الناتج</span><strong>{mathQuestion.first} <i>{mathQuestion.operation}</i> {mathQuestion.second} <i>=</i> ؟</strong></div><div className="math-options">{mathQuestion.options.map((answer) => <button key={answer} className={`math-option ${mathFeedback && answer === mathQuestion.answer ? 'correct' : ''} ${mathFeedback === 'wrong' && answer === mathAnswer ? 'incorrect' : ''}`} onClick={() => chooseMathAnswer(answer)} disabled={mathFeedback !== null} aria-pressed={mathAnswer === answer}>{answer}</button>)}</div><div className="games-footer"><span className={`math-feedback ${mathFeedback || ''}`} aria-live="polite">{mathFeedback === 'correct' ? 'إجابة صحيحة، أحسنت!' : mathFeedback === 'wrong' ? `الإجابة الصحيحة: ${mathQuestion.answer}` : 'اختر الإجابة الصحيحة'}</span>{mathFeedback && <button className="game-action" onClick={nextMathQuestion}>السؤال التالي <ArrowLeft size={14} /></button>}</div></section>
+        <section className="panel game-card reaction-game"><div className="game-heading"><div className="game-heading-icon reaction-icon"><Zap size={18} /></div><div className="game-heading-copy"><h2>سرعة الاستجابة</h2><p>اختبر سرعة ردّة فعلك</p></div><span className="reaction-best">{reactionBest === null ? 'أفضل نتيجة —' : `أفضل نتيجة ${reactionBest} مللي ث`}</span></div><button className={`reaction-pad ${reactionStage}`} onClick={handleReactionTap} aria-live="polite" aria-label={reactionStage === 'ready' ? 'انقر الآن' : reactionStage === 'waiting' ? 'انتظر الإشارة' : 'انقر لبدء جولة سرعة الاستجابة'}><span className="reaction-light"><Zap size={23} /></span><strong>{reactionStage === 'idle' ? 'انقر لبدء الجولة' : reactionStage === 'waiting' ? 'انتظر اللون الأخضر…' : reactionStage === 'ready' ? 'الآن! انقر بسرعة' : reactionStage === 'early' ? 'بكّرت! انقر للمحاولة مجدداً' : `زمنك ${reactionTime} مللي ث · جولة جديدة؟`}</strong><span>{reactionStage === 'waiting' ? 'لا تنقر حتى تتغير الإشارة' : reactionStage === 'ready' ? 'اضغط هنا بأسرع ما تستطيع' : 'راقب الإشارة واستجب عند تغيّرها'}</span></button><div className="reaction-footer"><span className="game-hint">متوسط الاستجابة غالباً بين 200 و 300 مللي ثانية.</span>{reactionTime !== null && <span className="reaction-last">آخر محاولة: {reactionTime} مللي ث</span>}</div></section>
       </div>}
     </main>
     <nav className="mobile-nav">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
