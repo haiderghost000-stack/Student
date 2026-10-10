@@ -330,6 +330,30 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .reaction-pad.early .reaction-light { color:#fff;background:#c68374; }
 .reaction-footer { display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:13px; }
 .reaction-last { color:var(--teal-dark);font-size:10px;font-weight:600; }
+.number-game { grid-column:1/-1;width:min(100%,720px);justify-self:center; }
+.number-icon { color:#8b7545;background:#f2eddf; }
+.number-game-play { display:grid;grid-template-columns:140px minmax(0,1fr);align-items:center;gap:22px;margin:4px auto 0;max-width:560px; }
+.number-secret-badge { width:112px;aspect-ratio:1;display:grid;place-items:center;justify-self:center;border:1px solid #e5e8dd;border-radius:32px;background:linear-gradient(145deg,#f4f5ec,#e9eee4);color:#759182;box-shadow:inset 0 1px #ffffffb8,0 8px 22px #294d390c;transition:background .2s,border-color .2s,color .2s,transform .2s; }
+.number-secret-badge span { font:600 39px 'DM Mono',monospace; }
+.number-secret-badge.revealed { transform:scale(1.04);border-color:#b8d7be;background:linear-gradient(145deg,#eaf4e9,#dcecdf);color:#477d58; }
+.number-game-controls { min-width:0; }
+.number-game-stats { display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;color:var(--muted);font-size:10px; }
+.number-game-stats b { margin-inline-start:4px;color:var(--teal-dark);font:600 12px 'DM Mono',monospace; }
+.number-guess-form { display:grid;grid-template-columns:minmax(0,1fr) 82px;gap:8px; }
+.number-guess-input { width:100%;min-width:0;height:42px;border:1px solid var(--game-border);border-radius:11px;background:var(--game-cell);color:var(--ink);font:600 15px 'DM Mono',monospace;text-align:center;direction:ltr; }
+.number-guess-input::placeholder { color:#a2aea5;font:400 11px 'IBM Plex Sans Arabic',sans-serif;direction:rtl; }
+.number-guess-input:focus-visible { outline:3px solid #82aa984d;border-color:#88ad94; }
+.number-guess-submit { min-height:42px;border:1px solid var(--teal);border-radius:11px;background:var(--teal);color:white;font:600 12px 'IBM Plex Sans Arabic',sans-serif;transition:transform .16s,background .16s; }
+.number-guess-submit:not(:disabled):hover { transform:translateY(-1px);background:var(--teal-dark); }
+.number-guess-submit:disabled { opacity:.48; }
+.number-feedback { min-height:20px;margin:9px 0 0;color:var(--muted);font-size:11px;line-height:1.7; }
+.number-feedback.higher,.number-feedback.lower { color:#658b73; }
+.number-feedback.won { color:#4d8361;font-weight:700; }
+.number-feedback.error { color:#b36d5e; }
+.number-history { display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:7px;min-height:31px;margin-top:14px; }
+.number-history-label { color:var(--muted);font-size:10px; }
+.number-history-chip { min-width:27px;height:27px;display:grid;place-items:center;padding:0 6px;border:1px solid var(--game-border);border-radius:9px;background:var(--game-cell);color:var(--ink);font:500 11px 'DM Mono',monospace; }
+.number-history-empty { color:#a2aea5;font-size:10px; }
 @keyframes game-pulse { 50% { box-shadow:0 0 0 7px #8ebda012; } }
 .xo-turn:not(.finished) .turn-dot { animation:game-pulse 1.8s ease-in-out infinite; }
 .toast-message { position:fixed;bottom:20px;left:20px;background:#315f55;color:white;padding:12px 17px;border-radius:11px;font-size:12px;z-index:30;box-shadow:0 8px 20px #18372b26;animation:appear .2s ease both; }
@@ -353,6 +377,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
  .notes-grid{grid-template-columns:1fr}.toolbar{width:100%}.search-input{min-width:0;flex:1}.filters{width:100%;overflow:auto}.task-list{padding:2px 13px}.row-actions{opacity:1}.task-row{gap:9px}
  .form-grid{grid-template-columns:1fr}.form-field.full{grid-column:auto}.modal{padding:19px}
  .timer-main{min-height:350px;padding:20px}.section-panel{padding:16px}
+ .number-game-play{grid-template-columns:82px minmax(0,1fr);gap:12px}.number-secret-badge{width:76px;border-radius:23px}.number-secret-badge span{font-size:30px}.number-guess-form{grid-template-columns:minmax(0,1fr) 68px}
 }
 
 .app-shell[data-theme='dark'] {
@@ -510,6 +535,16 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .app-shell[data-theme='dark'] .reaction-pad.result .reaction-light { color:#102017;background:#9bb3db; }
 .app-shell[data-theme='dark'] .reaction-pad.early { border-color:#754a44;background:linear-gradient(145deg,#472f2c,#3c2927);color:#f0b0a5; }
 .app-shell[data-theme='dark'] .reaction-pad.early .reaction-light { color:#fff;background:#c68374; }
+.app-shell[data-theme='dark'] .number-icon { color:#e2c88e;background:#413a2b; }
+.app-shell[data-theme='dark'] .number-secret-badge { border-color:#3a5244;background:linear-gradient(145deg,#293a30,#24342b);color:#b6d9c0;box-shadow:inset 0 1px #ffffff0b,0 8px 22px #0000001a; }
+.app-shell[data-theme='dark'] .number-secret-badge.revealed { border-color:#416b4b;background:linear-gradient(145deg,#2b4934,#253e2e);color:#a9ddb6; }
+.app-shell[data-theme='dark'] .number-game-stats b { color:#b6d9c0; }
+.app-shell[data-theme='dark'] .number-guess-input::placeholder,
+.app-shell[data-theme='dark'] .number-history-empty { color:#82968a; }
+.app-shell[data-theme='dark'] .number-feedback.higher,
+.app-shell[data-theme='dark'] .number-feedback.lower,
+.app-shell[data-theme='dark'] .number-feedback.won { color:#a9ddb6; }
+.app-shell[data-theme='dark'] .number-feedback.error { color:#efaaa0; }
 .app-shell[data-theme='dark'] .mobile-nav { background:#17231ded;border-color:var(--line); }
 .app-shell[data-theme='dark'] .mobile-nav button { color:#9aada3; }
 .app-shell[data-theme='dark'] .mobile-nav button.active { color:#a7d9c3; }
@@ -540,6 +575,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .pdf-pages-stack { gap:12px;padding:12px 8px max(18px,env(safe-area-inset-bottom)); }
 }
 @media(prefers-reduced-motion:reduce) {
-  .game-card,.xo-cell,.memory-card,.memory-progress span,.game-action,.math-option,.reaction-pad { transition:none; }
+  .game-card,.xo-cell,.memory-card,.memory-progress span,.game-action,.math-option,.reaction-pad,.number-secret-badge,.number-guess-submit { transition:none; }
   .xo-turn:not(.finished) .turn-dot,.pdf-loader { animation:none; }
 }

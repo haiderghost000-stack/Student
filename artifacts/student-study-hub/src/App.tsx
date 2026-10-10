@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlarmClock, ArrowLeft, Calculator, Check, CheckCheck, Clock3,
+  AlarmClock, ArrowLeft, Calculator, Check, CheckCheck, Clock3, Hash,
   FileText, Gamepad2, GraduationCap, LayoutDashboard, ListTodo, LoaderCircle, MoreHorizontal, Pause,
   Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload, Zap,
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
@@ -14,6 +14,7 @@ type PdfRecord = PdfMeta & { file: File };
 type MathQuestion = { first: number; second: number; operation: '+' | '−' | '×'; answer: number; options: number[] };
 type XoMark = 'X' | 'O';
 type XoBoard = (XoMark | null)[];
+type NumberFeedback = 'idle' | 'higher' | 'lower' | 'won' | 'error';
 type Section = 'overview' | 'tasks' | 'notes' | 'timer' | 'library' | 'games';
 type ModalMode = 'task' | 'note' | null;
 
@@ -133,6 +134,11 @@ function App() {
   const [reactionStage, setReactionStage] = useState<'idle' | 'waiting' | 'ready' | 'result' | 'early'>('idle');
   const [reactionTime, setReactionTime] = useState<number | null>(null);
   const [reactionBest, setReactionBest] = useState<number | null>(null);
+  const [secretNumber, setSecretNumber] = useState(() => Math.floor(Math.random() * 20) + 1);
+  const [numberGuess, setNumberGuess] = useState('');
+  const [numberAttempts, setNumberAttempts] = useState(0);
+  const [numberHistory, setNumberHistory] = useState<number[]>([]);
+  const [numberFeedback, setNumberFeedback] = useState<NumberFeedback>('idle');
   const pdfInput = useRef<HTMLInputElement>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reactionReadyAt = useRef(0);
@@ -280,6 +286,30 @@ function App() {
     else setMathStreak(0);
   };
   const nextMathQuestion = () => { setMathQuestion(createMathQuestion()); setMathFeedback(null); setMathAnswer(null); };
+  const resetNumberGame = () => {
+    setSecretNumber(Math.floor(Math.random() * 20) + 1);
+    setNumberGuess('');
+    setNumberAttempts(0);
+    setNumberHistory([]);
+    setNumberFeedback('idle');
+  };
+  const submitNumberGuess = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (numberFeedback === 'won') return;
+    const value = numberGuess.trim();
+    const guess = Number(value);
+    if (!value || !Number.isInteger(guess) || guess < 1 || guess > 20) {
+      setNumberFeedback('error');
+      return;
+    }
+    if (numberHistory.includes(guess)) {
+      setNumberFeedback('error');
+      return;
+    }
+    setNumberHistory((history) => [guess, ...history]);
+    setNumberAttempts((attempts) => attempts + 1);
+    setNumberFeedback(guess === secretNumber ? 'won' : guess < secretNumber ? 'higher' : 'lower');
+  };
   const handleReactionTap = () => {
     if (reactionStage === 'waiting') { setReactionStage('early'); return; }
     if (reactionStage === 'ready') {
@@ -394,6 +424,33 @@ function App() {
         <section className="panel game-card memory-game"><div className="game-heading"><div className="game-heading-icon memory-icon"><Sparkles size={18} /></div><div className="game-heading-copy"><h2>لعبة الذاكرة</h2><p>اقلب البطاقات وابحث عن الأزواج</p></div><button className="small-icon game-reset" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><div className="memory-stats"><div className="memory-stat"><span>المحاولات</span><b>{memoryMoves}</b></div><div className="memory-stat"><span>الأزواج</span><b>{memoryMatched.length / 2}<i> / {memoryPairs}</i></b></div><label className="pair-picker">المستوى<select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))}><option value={4}>سهل</option><option value={6}>متوسط</option><option value={8}>تحدّي</option></select></label></div><div className="memory-progress" aria-label={`تم العثور على ${memoryMatched.length / 2} من ${memoryPairs} أزواج`}><span style={{ width: `${memoryCards.length ? (memoryMatched.length / memoryCards.length) * 100 : 0}%` }} /></div><div className={`memory-grid pairs-${memoryPairs}`}>{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); const matched = memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${matched ? 'matched' : ''}`} onClick={() => chooseMemory(index)} disabled={matched} aria-pressed={open} aria-label={matched ? `زوج مكتمل، بطاقة ${symbol}` : open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}><span className="memory-face" aria-hidden="true">{open ? symbol : <Sparkles size={18} />}</span></button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span className="memory-win"><Check size={14} /> أحسنت، وجدت كل الأزواج!</span>}<button className="game-action" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
         <section className="panel game-card math-game"><div className="game-heading"><div className="game-heading-icon math-icon"><Calculator size={18} /></div><div className="game-heading-copy"><h2>تحدّي الحساب</h2><p>أسئلة سريعة لتنشيط ذهنك</p></div><button className="small-icon game-reset" aria-label="إعادة نقاط تحدي الحساب" onClick={() => { setMathScore(0); setMathStreak(0); nextMathQuestion(); }}><RotateCcw size={15} /></button></div><div className="math-score-row"><span>إجابات صحيحة <b>{mathScore}</b></span><span>متتالية <b>{mathStreak}</b></span></div><div className="math-question-box"><span>أوجد الناتج</span><strong>{mathQuestion.first} <i>{mathQuestion.operation}</i> {mathQuestion.second} <i>=</i> ؟</strong></div><div className="math-options">{mathQuestion.options.map((answer) => <button key={answer} className={`math-option ${mathFeedback && answer === mathQuestion.answer ? 'correct' : ''} ${mathFeedback === 'wrong' && answer === mathAnswer ? 'incorrect' : ''}`} onClick={() => chooseMathAnswer(answer)} disabled={mathFeedback !== null} aria-pressed={mathAnswer === answer}>{answer}</button>)}</div><div className="games-footer"><span className={`math-feedback ${mathFeedback || ''}`} aria-live="polite">{mathFeedback === 'correct' ? 'إجابة صحيحة، أحسنت!' : mathFeedback === 'wrong' ? `الإجابة الصحيحة: ${mathQuestion.answer}` : 'اختر الإجابة الصحيحة'}</span>{mathFeedback && <button className="game-action" onClick={nextMathQuestion}>السؤال التالي <ArrowLeft size={14} /></button>}</div></section>
         <section className="panel game-card reaction-game"><div className="game-heading"><div className="game-heading-icon reaction-icon"><Zap size={18} /></div><div className="game-heading-copy"><h2>سرعة الاستجابة</h2><p>اختبر سرعة ردّة فعلك</p></div><span className="reaction-best">{reactionBest === null ? 'أفضل نتيجة —' : `أفضل نتيجة ${reactionBest} مللي ث`}</span></div><button className={`reaction-pad ${reactionStage}`} onClick={handleReactionTap} aria-live="polite" aria-label={reactionStage === 'ready' ? 'انقر الآن' : reactionStage === 'waiting' ? 'انتظر الإشارة' : 'انقر لبدء جولة سرعة الاستجابة'}><span className="reaction-light"><Zap size={23} /></span><strong>{reactionStage === 'idle' ? 'انقر لبدء الجولة' : reactionStage === 'waiting' ? 'انتظر اللون الأخضر…' : reactionStage === 'ready' ? 'الآن! انقر بسرعة' : reactionStage === 'early' ? 'بكّرت! انقر للمحاولة مجدداً' : `زمنك ${reactionTime} مللي ث · جولة جديدة؟`}</strong><span>{reactionStage === 'waiting' ? 'لا تنقر حتى تتغير الإشارة' : reactionStage === 'ready' ? 'اضغط هنا بأسرع ما تستطيع' : 'راقب الإشارة واستجب عند تغيّرها'}</span></button><div className="reaction-footer"><span className="game-hint">متوسط الاستجابة غالباً بين 200 و 300 مللي ثانية.</span>{reactionTime !== null && <span className="reaction-last">آخر محاولة: {reactionTime} مللي ث</span>}</div></section>
+        <section className="panel game-card number-game">
+          <div className="game-heading">
+            <div className="game-heading-icon number-icon"><Hash size={18} /></div>
+            <div className="game-heading-copy"><h2>خمن الرقم</h2><p>ابحث عن الرقم السري من 1 إلى 20</p></div>
+            <button className="small-icon game-reset" aria-label="بدء جولة تخمين جديدة" onClick={resetNumberGame}><RotateCcw size={15} /></button>
+          </div>
+          <div className="number-game-play">
+            <div className={`number-secret-badge ${numberFeedback === 'won' ? 'revealed' : ''}`} aria-label={numberFeedback === 'won' ? `الرقم هو ${secretNumber}` : 'الرقم السري مخفي'}>
+              <span aria-hidden="true">{numberFeedback === 'won' ? secretNumber : '؟'}</span>
+            </div>
+            <div className="number-game-controls">
+              <div className="number-game-stats"><span>المحاولات <b>{numberAttempts}</b></span><span>النطاق <b dir="ltr">1–20</b></span></div>
+              <form className="number-guess-form" onSubmit={submitNumberGuess}>
+                <input className="number-guess-input" type="number" min="1" max="20" step="1" inputMode="numeric" required aria-label="خمّن رقماً من 1 إلى 20" placeholder="اكتب رقمك" value={numberGuess} disabled={numberFeedback === 'won'} onChange={(event) => { setNumberGuess(event.target.value); if (numberFeedback === 'error') setNumberFeedback('idle'); }} />
+                <button className="number-guess-submit" type="submit" disabled={!numberGuess || numberFeedback === 'won'}>خمن</button>
+              </form>
+              <p className={`number-feedback ${numberFeedback}`} aria-live="polite">
+                {numberFeedback === 'higher' ? 'الرقم السري أكبر، حاول مجدداً.' : numberFeedback === 'lower' ? 'الرقم السري أصغر، حاول مجدداً.' : numberFeedback === 'won' ? `أحسنت! وجدته خلال ${numberAttempts} محاولة.` : numberFeedback === 'error' ? (numberHistory.includes(Number(numberGuess)) ? 'جرّبت هذا الرقم من قبل، اختر رقماً آخر.' : 'اختر رقماً صحيحاً بين 1 و20.') : 'أدخل تخمينك وسأخبرك إن كان أعلى أو أقل.'}
+              </p>
+            </div>
+          </div>
+          <div className="number-history" aria-label="الأرقام التي جربتها">
+            <span className="number-history-label">تخميناتك</span>
+            {numberHistory.length ? numberHistory.map((guess) => <span className="number-history-chip" key={guess}>{guess}</span>) : <span className="number-history-empty">لم تجرّب رقماً بعد</span>}
+          </div>
+          <div className="games-footer"><span className="game-hint">جرّب أن تجد الرقم بأقل عدد من المحاولات</span><button className="game-action" onClick={resetNumberGame}><RotateCcw size={14} /> جولة جديدة</button></div>
+        </section>
       </div>}
     </main>
     {activePdf && activePdfFile && <Suspense fallback={<div className="pdf-fullscreen-loading" role="status"><LoaderCircle size={24} /> جارٍ تجهيز قارئ PDF…</div>}><PdfReader key={activePdf.id} file={activePdfFile} name={activePdf.name} onClose={() => { setActivePdfFile(null); setActivePdf(null); }} /></Suspense>}
