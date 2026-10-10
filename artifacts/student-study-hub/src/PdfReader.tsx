@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  FileText, LoaderCircle, Minus, Plus, X,
+  FileText, LoaderCircle, Maximize2, Minus, Plus, X,
 } from 'lucide-react';
 import {
   getDocument, GlobalWorkerOptions, TextLayer,
@@ -12,14 +12,41 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type PdfReaderProps = { file: Blob; name: string; onClose: () => void };
 type PageSize = { width: number; height: number };
-type PinchStart = { distance: number; zoom: number; scrollTop: number; scrollLeft: number; centerX: number; centerY: number } | null;
+type PinchStart = {
+  distance: number;
+  zoom: number;
+  currentZoom: number;
+  scrollTop: number;
+  scrollLeft: number;
+  centerX: number;
+  centerY: number;
+  originX: number;
+  originY: number;
+  frameId: number | null;
+} | null;
 
-const clampZoom = (value: number) => Math.min(3, Math.max(0.6, value));
+const clampZoom = (value: number) => Math.min(4, Math.max(0.5, Math.round(value * 100) / 100));
 const arabicTextPattern = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i;
 const touchDistance = (touches: TouchList) => Math.max(1, Math.hypot(
   touches[0].clientX - touches[1].clientX,
   touches[0].clientY - touches[1].clientY,
 ));
+
+function applyStackPreview(scrollArea: HTMLElement, baseZoom: number, previewZoom: number, originX: number, originY: number) {
+  const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
+  if (!stack) return;
+  stack.style.transformOrigin = `${originX}px ${originY}px`;
+  stack.style.transform = `scale(${previewZoom / baseZoom})`;
+  stack.style.willChange = 'transform';
+}
+
+function clearStackPreview(scrollArea: HTMLElement) {
+  const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
+  if (!stack) return;
+  stack.style.transform = '';
+  stack.style.transformOrigin = '';
+  stack.style.willChange = '';
+}
 
 export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
@@ -34,6 +61,26 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
   const pinchRef = useRef<PinchStart>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
+  const zoomValueRef = useRef<HTMLSpanElement>(null);
+
+  const zoomTo = (value: number, anchorX?: number, anchorY?: number) => {
+    const nextZoom = clampZoom(value);
+    const previousZoom = zoomRef.current;
+    if (nextZoom === previousZoom) return;
+    const scrollArea = scrollRef.current;
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+    if (!scrollArea) return;
+    const focusX = anchorX ?? scrollArea.clientWidth / 2;
+    const focusY = anchorY ?? scrollArea.clientHeight / 2;
+    const previousScrollTop = scrollArea.scrollTop;
+    const previousScrollLeft = scrollArea.scrollLeft;
+    const ratio = nextZoom / previousZoom;
+    requestAnimationFrame(() => {
+      scrollArea.scrollTop = Math.max(0, (previousScrollTop + focusY) * ratio - focusY);
+      scrollArea.scrollLeft = Math.max(0, (previousScrollLeft + focusX) * ratio - focusX);
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -72,8 +119,8 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
     window.document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCloseRef.current();
-      if (event.key === '+' || event.key === '=') setZoom((value) => clampZoom(value + 0.15));
-      if (event.key === '-') setZoom((value) => clampZoom(value - 0.15));
+      if (event.key === '+' || event.key === '=') zoomTo(zoomRef.current + 0.1);
+      if (event.key === '-') zoomTo(zoomRef.current - 0.1);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
@@ -101,46 +148,61 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 2) return;
       const rect = scrollArea.getBoundingClientRect();
-      const centerX = ((event.touches[0].clientX + event.touches[1].clientX) / 2) - rect.left;
+      const clientX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+      const clientY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+      const centerX = clientX - rect.left;
+      const centerY = clientY - rect.top;
+      const stackRect = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack')?.getBoundingClientRect();
       pinchRef.current = {
         distance: touchDistance(event.touches),
         zoom: zoomRef.current,
+        currentZoom: zoomRef.current,
         scrollTop: scrollArea.scrollTop,
         scrollLeft: scrollArea.scrollLeft,
         centerX,
-        centerY: ((event.touches[0].clientY + event.touches[1].clientY) / 2) - rect.top,
+        centerY,
+        originX: stackRect ? clientX - stackRect.left : centerX,
+        originY: stackRect ? clientY - stackRect.top : centerY,
+        frameId: null,
       };
     };
     const onTouchMove = (event: TouchEvent) => {
       const pinch = pinchRef.current;
       if (event.touches.length !== 2 || !pinch) return;
       event.preventDefault();
-      const nextZoom = clampZoom(pinch.zoom * touchDistance(event.touches) / pinch.distance);
-      zoomRef.current = nextZoom;
-      setZoom(nextZoom);
-      const ratio = nextZoom / pinch.zoom;
-      requestAnimationFrame(() => {
-        scrollArea.scrollTop = Math.max(0, (pinch.scrollTop + pinch.centerY) * ratio - pinch.centerY);
-        scrollArea.scrollLeft = Math.max(0, (pinch.scrollLeft + pinch.centerX) * ratio - pinch.centerX);
+      pinch.currentZoom = clampZoom(pinch.zoom * touchDistance(event.touches) / pinch.distance);
+      if (zoomValueRef.current) zoomValueRef.current.textContent = `${Math.round(pinch.currentZoom * 100)}٪`;
+      if (pinch.frameId !== null) cancelAnimationFrame(pinch.frameId);
+      pinch.frameId = requestAnimationFrame(() => {
+        applyStackPreview(scrollArea, pinch.zoom, pinch.currentZoom, pinch.originX, pinch.originY);
+        pinch.frameId = null;
       });
     };
     const onTouchEnd = (event: TouchEvent) => {
-      if (event.touches.length < 2) pinchRef.current = null;
+      const pinch = pinchRef.current;
+      if (event.touches.length >= 2 || !pinch) return;
+      pinchRef.current = null;
+      if (pinch.frameId !== null) cancelAnimationFrame(pinch.frameId);
+      if (pinch.currentZoom === pinch.zoom) {
+        clearStackPreview(scrollArea);
+        return;
+      }
+      applyStackPreview(scrollArea, pinch.zoom, pinch.currentZoom, pinch.originX, pinch.originY);
+      const ratio = pinch.currentZoom / pinch.zoom;
+      zoomRef.current = pinch.currentZoom;
+      setZoom(pinch.currentZoom);
+      requestAnimationFrame(() => {
+        scrollArea.scrollTop = Math.max(0, (pinch.scrollTop + pinch.centerY) * ratio - pinch.centerY);
+        scrollArea.scrollLeft = Math.max(0, (pinch.scrollLeft + pinch.centerX) * ratio - pinch.centerX);
+        clearStackPreview(scrollArea);
+      });
     };
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey) return;
       event.preventDefault();
       const previousZoom = zoomRef.current;
-      const nextZoom = clampZoom(previousZoom * Math.exp(-event.deltaY * 0.002));
-      zoomRef.current = nextZoom;
-      setZoom(nextZoom);
       const rect = scrollArea.getBoundingClientRect();
-      const anchorY = event.clientY - rect.top;
-      const anchorX = event.clientX - rect.left;
-      requestAnimationFrame(() => {
-        scrollArea.scrollTop = Math.max(0, (scrollArea.scrollTop + anchorY) * (nextZoom / previousZoom) - anchorY);
-        scrollArea.scrollLeft = Math.max(0, (scrollArea.scrollLeft + anchorX) * (nextZoom / previousZoom) - anchorX);
-      });
+      zoomTo(previousZoom * Math.exp(-event.deltaY * 0.002), event.clientX - rect.left, event.clientY - rect.top);
     };
     scrollArea.addEventListener('touchstart', onTouchStart, { passive: true });
     scrollArea.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -183,7 +245,7 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
       scrollFrameRef.current = null;
     });
   };
-  const changeZoom = (amount: number) => setZoom((value) => clampZoom(value + amount));
+  const changeZoom = (amount: number) => zoomTo(zoomRef.current + amount);
 
   return <div className="pdf-fullscreen" role="dialog" aria-modal="true" aria-label={`قارئ ملف ${name}`} dir="rtl">
     <header className="pdf-fullscreen-header">
@@ -195,9 +257,10 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
       <div className="pdf-reader-actions">
         <span className="pdf-page-count" aria-live="polite">{pdfDocument ? `صفحة ${pageNumber} من ${pdfDocument.numPages}` : 'قارئ PDF'}</span>
         <div className="pdf-zoom-controls" aria-label="تكبير الصفحة">
-          <button className="viewer-control" aria-label="تصغير" title="تصغير" disabled={zoom <= 0.6} onClick={() => changeZoom(-0.15)}><Minus size={16} /></button>
-          <span className="pdf-zoom-value">{Math.round(zoom * 100)}٪</span>
-          <button className="viewer-control" aria-label="تكبير" title="تكبير" disabled={zoom >= 3} onClick={() => changeZoom(0.15)}><Plus size={16} /></button>
+          <button className="viewer-control" aria-label="تصغير" title="تصغير" disabled={zoom <= 0.5} onClick={() => changeZoom(-0.1)}><Minus size={16} /></button>
+          <span className="pdf-zoom-value" ref={zoomValueRef}>{Math.round(zoom * 100)}٪</span>
+          <button className="viewer-control" aria-label="تكبير" title="تكبير" disabled={zoom >= 4} onClick={() => changeZoom(0.1)}><Plus size={16} /></button>
+          <button className="viewer-control" aria-label="ملاءمة عرض الصفحة" title="ملاءمة عرض الصفحة" disabled={zoom === 1} onClick={() => zoomTo(1)}><Maximize2 size={14} /></button>
         </div>
       </div>
     </header>
