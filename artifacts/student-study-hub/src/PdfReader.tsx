@@ -15,6 +15,7 @@ type PageSize = { width: number; height: number };
 type PinchStart = { distance: number; zoom: number; scrollTop: number; scrollLeft: number; centerX: number; centerY: number } | null;
 
 const clampZoom = (value: number) => Math.min(3, Math.max(0.6, value));
+const arabicTextPattern = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i;
 const touchDistance = (touches: TouchList) => Math.max(1, Math.hypot(
   touches[0].clientX - touches[1].clientX,
   touches[0].clientY - touches[1].clientY,
@@ -235,6 +236,7 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
   const shellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     let active = true;
@@ -285,15 +287,33 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
 
     void (async () => {
       try {
+        await renderQueueRef.current;
+        if (cancelled) return;
         const textContent = await page.getTextContent();
         if (cancelled) return;
-        const containsArabic = textContent.items.some((item) => 'str' in item && /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i.test(item.str));
+        const arabicFontNames = new Set(
+          textContent.items.flatMap((item) => 'str' in item && arabicTextPattern.test(item.str) ? [item.fontName] : []),
+        );
+        const containsArabic = arabicFontNames.size > 0;
+        if (containsArabic) {
+          await window.document.fonts.load('16px "IBM Plex Sans Arabic"').catch(() => {});
+          if (cancelled) return;
+        }
+        const textContentForLayer = containsArabic ? {
+          ...textContent,
+          styles: Object.fromEntries(Object.entries(textContent.styles).map(([fontName, style]) => [
+            fontName,
+            arabicFontNames.has(fontName)
+              ? { ...style, fontFamily: '"IBM Plex Sans Arabic", sans-serif' }
+              : style,
+          ])),
+        } : textContent;
         textContainer.replaceChildren();
         textContainer.classList.toggle('arabic-readable', containsArabic);
         textContainer.style.width = `${viewport.width}px`;
         textContainer.style.height = `${viewport.height}px`;
         textContainer.style.setProperty('--total-scale-factor', String(viewport.scale));
-        textLayer = new TextLayer({ textContentSource: textContent, container: textContainer, viewport });
+        textLayer = new TextLayer({ textContentSource: textContentForLayer, container: textContainer, viewport });
 
         const outputScale = Math.min(window.devicePixelRatio || 1, 2);
         const context = canvas.getContext('2d', { alpha: false });
@@ -314,10 +334,16 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
             context.strokeText = originalStrokeText;
           };
         }
+        const textRenderPromise = textLayer.render();
         renderTask = page.render({ canvas, canvasContext: context, viewport });
-        await Promise.all([renderTask.promise, textLayer.render()]);
-        restoreCanvasText?.();
-        restoreCanvasText = null;
+        const pageRenderPromise = Promise.allSettled([renderTask.promise, textRenderPromise]).then((results) => {
+          restoreCanvasText?.();
+          restoreCanvasText = null;
+          const failedRender = results.find((result) => result.status === 'rejected');
+          if (failedRender?.status === 'rejected') throw failedRender.reason;
+        });
+        renderQueueRef.current = pageRenderPromise.then(() => {}, () => {});
+        await pageRenderPromise;
         if (!cancelled) {
           setRendering(false);
           onRendered?.(true);

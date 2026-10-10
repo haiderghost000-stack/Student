@@ -1,1 +1,2 @@
 - [Student data storage](student-data-storage.md) — study content stays in browser storage; cross-device sync is a separate feature.
+- [PDF Arabic zoom rendering](pdf-arabic-zoom.md) — keep TextLayer font measurements aligned with the displayed font and serialize zoom redraws per page.
