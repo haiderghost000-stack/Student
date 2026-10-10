@@ -256,6 +256,10 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .game-reset:hover { color:var(--teal);background:var(--mint); }
 .xo-turn { display:flex;align-items:center;justify-content:center;gap:7px;width:max-content;max-width:100%;margin:0 auto 15px;padding:7px 13px;border:1px solid var(--game-border);border-radius:999px;background:var(--game-cell);color:#788982;font-size:12px; }
 .xo-turn.finished { border-color:#c5dfce;background:#edf7ef;color:#4f8263; }
+.xo-mode-switch { display:grid;grid-template-columns:1fr 1fr;gap:4px;max-width:280px;margin:0 auto 14px;padding:4px;border:1px solid var(--game-border);border-radius:12px;background:var(--game-cell); }
+.xo-mode-switch button { min-height:34px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 11px 'IBM Plex Sans Arabic',sans-serif;transition:background .16s,color .16s,box-shadow .16s; }
+.xo-mode-switch button:hover { color:var(--teal-dark); }
+.xo-mode-switch button.active { background:var(--game-surface);color:var(--teal-dark);box-shadow:0 2px 8px #21443010; }
 .turn-dot { width:7px;height:7px;border-radius:50%;background:#8ebda0;box-shadow:0 0 0 4px #8ebda022; }
 .turn-mark { font:700 14px 'DM Mono',monospace; }
 .turn-mark.x-mark { color:#648cc3; }
@@ -466,6 +470,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .app-shell[data-theme='dark'] .memory-icon { color:#e2c88e;background:#413a2b; }
 .app-shell[data-theme='dark'] .xo-turn { color:#b2c3b9; }
 .app-shell[data-theme='dark'] .xo-turn.finished { color:#a8d8b2;border-color:#3d6548;background:#253a2b; }
+.app-shell[data-theme='dark'] .xo-mode-switch { background:#19271f;border-color:#34473d; }
+.app-shell[data-theme='dark'] .xo-mode-switch button:hover { color:#c7e4d0; }
+.app-shell[data-theme='dark'] .xo-mode-switch button.active { color:#c7e4d0;background:#30483a;box-shadow:0 2px 8px #00000024; }
 .app-shell[data-theme='dark'] .xo-cell { box-shadow:inset 0 1px #ffffff0b,0 3px 8px #00000014; }
 .app-shell[data-theme='dark'] .xo-cell:nth-child(2n) { background:color-mix(in srgb,var(--game-cell),#56603b 18%); }
 .app-shell[data-theme='dark'] .xo-cell:not(:disabled):hover { border-color:#63866d;background:#304738; }

@@ -12,6 +12,8 @@ type Note = { id: string; title: string; content: string; subject: string; updat
 type PdfMeta = { id: string; name: string; size: number; addedAt: string };
 type PdfRecord = PdfMeta & { file: File };
 type MathQuestion = { first: number; second: number; operation: '+' | '−' | '×'; answer: number; options: number[] };
+type XoMark = 'X' | 'O';
+type XoBoard = (XoMark | null)[];
 type Section = 'overview' | 'tasks' | 'notes' | 'timer' | 'library' | 'games';
 type ModalMode = 'task' | 'note' | null;
 
@@ -116,7 +118,8 @@ function App() {
   const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [running, setRunning] = useState(false);
-  const [xo, setXo] = useState<(string | null)[]>(Array(9).fill(null));
+  const [xo, setXo] = useState<XoBoard>(Array(9).fill(null));
+  const [xoMode, setXoMode] = useState<'computer' | 'two-player'>('computer');
   const [memoryPairs, setMemoryPairs] = useState(6);
   const [memoryCards, setMemoryCards] = useState<string[]>([]);
   const [memoryOpen, setMemoryOpen] = useState<number[]>([]);
@@ -174,6 +177,24 @@ function App() {
     return () => clearInterval(interval);
   }, [running, timerMode, focusMinutes, breakMinutes]);
   useEffect(() => { if (!running) setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); }, [focusMinutes, breakMinutes, timerMode, running]);
+  const xoWinnerMark = xoWinner(xo);
+  const xoTurn: XoMark = xo.filter((mark) => mark !== null).length % 2 === 0 ? 'X' : 'O';
+  const xoDraw = !xoWinnerMark && xo.every((mark) => mark !== null);
+  const computerTurn = xoMode === 'computer' && xoTurn === 'O' && !xoWinnerMark && !xoDraw;
+  useEffect(() => {
+    if (!computerTurn) return;
+    const timeout = window.setTimeout(() => {
+      const move = chooseXoMove(xo);
+      if (move < 0) return;
+      setXo((current) => {
+        if (current[move] !== null || xoWinner(current) || current.every((mark) => mark !== null)) return current;
+        const next = [...current];
+        next[move] = 'O';
+        return next;
+      });
+    }, 420);
+    return () => window.clearTimeout(timeout);
+  }, [computerTurn, xo, xoMode]);
   const completedCount = tasks.filter((task) => task.completed).length;
   const pendingTasks = tasks.filter((task) => !task.completed).length;
   const todayTasks = tasks.filter((task) => task.dueDate === new Date().toISOString().slice(0, 10) && !task.completed);
@@ -269,9 +290,22 @@ function App() {
     setReactionTime(null); setReactionStage('waiting');
   };
   const playXo = (index: number) => {
-    if (xo[index] || xo.every(Boolean) || xoWinner(xo)) return;
-    setXo((old) => { const next = [...old]; next[index] = old.filter(Boolean).length % 2 === 0 ? 'X' : 'O'; return next; });
+    if (xo[index] !== null || xoDraw || xoWinnerMark || computerTurn) return;
+    setXo((old) => {
+      if (old[index] !== null || xoWinner(old) || old.every((mark) => mark !== null)) return old;
+      const mark: XoMark = old.filter((cell) => cell !== null).length % 2 === 0 ? 'X' : 'O';
+      if (xoMode === 'computer' && mark !== 'X') return old;
+      const next = [...old];
+      next[index] = mark;
+      return next;
+    });
   };
+  const changeXoMode = (mode: 'computer' | 'two-player') => {
+    if (mode === xoMode) return;
+    setXoMode(mode);
+    setXo(Array(9).fill(null));
+  };
+  const resetXo = () => setXo(Array(9).fill(null));
 
   const renderTasks = (compact = false) => {
     const list = compact ? (todayTasks.length ? todayTasks : tasks.filter((task) => !task.completed)).slice(0, 4) : filteredTasks;
@@ -328,7 +362,35 @@ function App() {
 
       {section === 'games' && <div className="content games-grid">
         <section className="games-welcome"><div><span className="game-kicker"><Sparkles size={14} /> استراحة قصيرة</span><h2>جدّد نشاطك بلعبة خفيفة</h2><p>اختر لعبتك، خذ نفساً، ثم عُد إلى دراستك بذهن أصفى.</p></div><div className="games-welcome-icon"><Gamepad2 size={26} /></div></section>
-        <section className="panel game-card xo-game"><div className="game-heading"><div className="game-heading-icon xo-icon"><Target size={18} /></div><div className="game-heading-copy"><h2>إكس-أو</h2><p>جولة سريعة مع صديق</p></div><button className="small-icon game-reset" aria-label="بدء جولة جديدة" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={15} /></button></div><div className={`xo-turn ${xoWinner(xo) ? 'finished' : ''}`}><span className="turn-dot" />{xoWinner(xo) ? `الفائز: ${xoWinner(xo)}` : xo.every(Boolean) ? 'تعادل جميل.' : <>الدور على <b className={`turn-mark ${xo.filter(Boolean).length % 2 === 0 ? 'x-mark' : 'o-mark'}`}>{xo.filter(Boolean).length % 2 === 0 ? 'X' : 'O'}</b></>}</div><div className="xo-board">{xo.map((cell, index) => <button key={index} className={`xo-cell ${cell === 'X' ? 'x-mark' : ''} ${cell === 'O' ? 'o-mark' : ''}`} onClick={() => playXo(index)} disabled={Boolean(cell) || Boolean(xoWinner(xo)) || xo.every(Boolean)} aria-label={`المربع ${index + 1}${cell ? `، ${cell}` : ''}`}>{cell}</button>)}</div><div className="games-footer"><span className="game-hint">تتناوبان حتى يكتمل الصف</span><button className="game-action" onClick={() => setXo(Array(9).fill(null))}><RotateCcw size={14} /> جولة جديدة</button></div></section>
+        <section className="panel game-card xo-game">
+          <div className="game-heading">
+            <div className="game-heading-icon xo-icon"><Target size={18} /></div>
+            <div className="game-heading-copy"><h2>إكس-أو</h2><p>{xoMode === 'computer' ? 'العب ضد الآلي أو بدّل إلى لاعبين' : 'جولة سريعة مع صديق'}</p></div>
+            <button className="small-icon game-reset" aria-label="بدء جولة جديدة" onClick={resetXo}><RotateCcw size={15} /></button>
+          </div>
+          <div className="xo-mode-switch" role="group" aria-label="طريقة اللعب">
+            <button className={xoMode === 'computer' ? 'active' : ''} aria-pressed={xoMode === 'computer'} onClick={() => changeXoMode('computer')}>ضد الآلي</button>
+            <button className={xoMode === 'two-player' ? 'active' : ''} aria-pressed={xoMode === 'two-player'} onClick={() => changeXoMode('two-player')}>لاعبان</button>
+          </div>
+          <div className={`xo-turn ${xoWinnerMark || xoDraw ? 'finished' : ''}`} aria-live="polite">
+            <span className="turn-dot" />
+            {xoWinnerMark
+              ? xoMode === 'computer'
+                ? xoWinnerMark === 'X' ? 'أحسنت، فزت على الآلي!' : 'فاز الآلي هذه الجولة.'
+                : <>الفائز: <b className={`turn-mark ${xoWinnerMark === 'X' ? 'x-mark' : 'o-mark'}`}>{xoWinnerMark}</b></>
+              : xoDraw
+                ? 'تعادل جميل.'
+                : computerTurn
+                  ? 'الآلي يفكر…'
+                  : xoMode === 'computer'
+                    ? <>دورك، أنت <b className="turn-mark x-mark">X</b></>
+                    : <>الدور على <b className={`turn-mark ${xoTurn === 'X' ? 'x-mark' : 'o-mark'}`}>{xoTurn}</b></>}
+          </div>
+          <div className="xo-board">
+            {xo.map((cell, index) => <button key={index} className={`xo-cell ${cell === 'X' ? 'x-mark' : ''} ${cell === 'O' ? 'o-mark' : ''}`} onClick={() => playXo(index)} disabled={cell !== null || Boolean(xoWinnerMark) || xoDraw || computerTurn} aria-label={`المربع ${index + 1}${cell ? `، ${cell}` : ''}`}>{cell}</button>)}
+          </div>
+          <div className="games-footer"><span className="game-hint">{xoMode === 'computer' ? 'أنت X والآلي O' : 'تتناوبان حتى يكتمل الصف'}</span><button className="game-action" onClick={resetXo}><RotateCcw size={14} /> جولة جديدة</button></div>
+        </section>
         <section className="panel game-card memory-game"><div className="game-heading"><div className="game-heading-icon memory-icon"><Sparkles size={18} /></div><div className="game-heading-copy"><h2>لعبة الذاكرة</h2><p>اقلب البطاقات وابحث عن الأزواج</p></div><button className="small-icon game-reset" aria-label="إعادة لعبة الذاكرة" onClick={() => makeMemory()}><RotateCcw size={15} /></button></div><div className="memory-stats"><div className="memory-stat"><span>المحاولات</span><b>{memoryMoves}</b></div><div className="memory-stat"><span>الأزواج</span><b>{memoryMatched.length / 2}<i> / {memoryPairs}</i></b></div><label className="pair-picker">المستوى<select className="select-field" aria-label="عدد أزواج الذاكرة" value={memoryPairs} onChange={(event) => makeMemory(Number(event.target.value))}><option value={4}>سهل</option><option value={6}>متوسط</option><option value={8}>تحدّي</option></select></label></div><div className="memory-progress" aria-label={`تم العثور على ${memoryMatched.length / 2} من ${memoryPairs} أزواج`}><span style={{ width: `${memoryCards.length ? (memoryMatched.length / memoryCards.length) * 100 : 0}%` }} /></div><div className={`memory-grid pairs-${memoryPairs}`}>{memoryCards.map((symbol, index) => { const open = memoryOpen.includes(index) || memoryMatched.includes(index); const matched = memoryMatched.includes(index); return <button key={index} className={`memory-card ${open ? 'open' : ''} ${matched ? 'matched' : ''}`} onClick={() => chooseMemory(index)} disabled={matched} aria-pressed={open} aria-label={matched ? `زوج مكتمل، بطاقة ${symbol}` : open ? `بطاقة ${symbol}` : 'اكشف البطاقة'}><span className="memory-face" aria-hidden="true">{open ? symbol : <Sparkles size={18} />}</span></button>; })}</div><div className="games-footer">{memoryMatched.length === memoryCards.length && <span className="memory-win"><Check size={14} /> أحسنت، وجدت كل الأزواج!</span>}<button className="game-action" onClick={() => makeMemory()}><RotateCcw size={14} /> ابدأ من جديد</button></div></section>
         <section className="panel game-card math-game"><div className="game-heading"><div className="game-heading-icon math-icon"><Calculator size={18} /></div><div className="game-heading-copy"><h2>تحدّي الحساب</h2><p>أسئلة سريعة لتنشيط ذهنك</p></div><button className="small-icon game-reset" aria-label="إعادة نقاط تحدي الحساب" onClick={() => { setMathScore(0); setMathStreak(0); nextMathQuestion(); }}><RotateCcw size={15} /></button></div><div className="math-score-row"><span>إجابات صحيحة <b>{mathScore}</b></span><span>متتالية <b>{mathStreak}</b></span></div><div className="math-question-box"><span>أوجد الناتج</span><strong>{mathQuestion.first} <i>{mathQuestion.operation}</i> {mathQuestion.second} <i>=</i> ؟</strong></div><div className="math-options">{mathQuestion.options.map((answer) => <button key={answer} className={`math-option ${mathFeedback && answer === mathQuestion.answer ? 'correct' : ''} ${mathFeedback === 'wrong' && answer === mathAnswer ? 'incorrect' : ''}`} onClick={() => chooseMathAnswer(answer)} disabled={mathFeedback !== null} aria-pressed={mathAnswer === answer}>{answer}</button>)}</div><div className="games-footer"><span className={`math-feedback ${mathFeedback || ''}`} aria-live="polite">{mathFeedback === 'correct' ? 'إجابة صحيحة، أحسنت!' : mathFeedback === 'wrong' ? `الإجابة الصحيحة: ${mathQuestion.answer}` : 'اختر الإجابة الصحيحة'}</span>{mathFeedback && <button className="game-action" onClick={nextMathQuestion}>السؤال التالي <ArrowLeft size={14} /></button>}</div></section>
         <section className="panel game-card reaction-game"><div className="game-heading"><div className="game-heading-icon reaction-icon"><Zap size={18} /></div><div className="game-heading-copy"><h2>سرعة الاستجابة</h2><p>اختبر سرعة ردّة فعلك</p></div><span className="reaction-best">{reactionBest === null ? 'أفضل نتيجة —' : `أفضل نتيجة ${reactionBest} مللي ث`}</span></div><button className={`reaction-pad ${reactionStage}`} onClick={handleReactionTap} aria-live="polite" aria-label={reactionStage === 'ready' ? 'انقر الآن' : reactionStage === 'waiting' ? 'انتظر الإشارة' : 'انقر لبدء جولة سرعة الاستجابة'}><span className="reaction-light"><Zap size={23} /></span><strong>{reactionStage === 'idle' ? 'انقر لبدء الجولة' : reactionStage === 'waiting' ? 'انتظر اللون الأخضر…' : reactionStage === 'ready' ? 'الآن! انقر بسرعة' : reactionStage === 'early' ? 'بكّرت! انقر للمحاولة مجدداً' : `زمنك ${reactionTime} مللي ث · جولة جديدة؟`}</strong><span>{reactionStage === 'waiting' ? 'لا تنقر حتى تتغير الإشارة' : reactionStage === 'ready' ? 'اضغط هنا بأسرع ما تستطيع' : 'راقب الإشارة واستجب عند تغيّرها'}</span></button><div className="reaction-footer"><span className="game-hint">متوسط الاستجابة غالباً بين 200 و 300 مللي ثانية.</span>{reactionTime !== null && <span className="reaction-last">آخر محاولة: {reactionTime} مللي ث</span>}</div></section>
@@ -344,10 +406,50 @@ function App() {
   </div>;
 }
 
-function xoWinner(board: (string | null)[]) {
+function xoWinner(board: XoBoard): XoMark | null {
   const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
   for (const [a, b, c] of lines) if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
   return null;
+}
+
+function scoreXoBoard(board: XoBoard, turn: XoMark, depth: number): number {
+  const winner = xoWinner(board);
+  if (winner === 'O') return 10 - depth;
+  if (winner === 'X') return depth - 10;
+  const available = board.flatMap((mark, index) => mark === null ? [index] : []);
+  if (!available.length) return 0;
+
+  if (turn === 'O') {
+    return Math.max(...available.map((index) => {
+      const next = [...board];
+      next[index] = 'O';
+      return scoreXoBoard(next, 'X', depth + 1);
+    }));
+  }
+  return Math.min(...available.map((index) => {
+    const next = [...board];
+    next[index] = 'X';
+    return scoreXoBoard(next, 'O', depth + 1);
+  }));
+}
+
+function chooseXoMove(board: XoBoard): number {
+  let bestScore = Number.NEGATIVE_INFINITY;
+  const bestMoves: number[] = [];
+  for (let index = 0; index < board.length; index += 1) {
+    if (board[index] !== null) continue;
+    const next = [...board];
+    next[index] = 'O';
+    const score = scoreXoBoard(next, 'X', 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMoves.length = 0;
+      bestMoves.push(index);
+    } else if (score === bestScore) {
+      bestMoves.push(index);
+    }
+  }
+  return bestMoves[Math.floor(Math.random() * bestMoves.length)] ?? -1;
 }
 
 export default App;
