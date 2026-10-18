@@ -1,3 +1,32 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="field" x1="46" y1="20" x2="456" y2="492" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#28715C"/>
+      <stop offset="1" stop-color="#164A3D"/>
+    </linearGradient>
+    <linearGradient id="page" x1="118" y1="164" x2="393" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF6"/>
+      <stop offset="1" stop-color="#E7F0E7"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="248" y1="178" x2="274" y2="364" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F29A79"/>
+      <stop offset="1" stop-color="#E77B5C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(0 320 -320 0 256 52)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#77A98B" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#77A98B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#field)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <circle cx="256" cy="256" r="194" stroke="#8BB49B" stroke-opacity=".16" stroke-width="2"/>
+  <path d="M118 180c0-11 9-20 20-20h70c19 0 36 7 48 19v179c-14-13-30-20-49-20h-69c-11 0-20-9-20-20V180Z" fill="url(#page)"/>
+  <path d="M394 180c0-11-9-20-20-20h-70c-19 0-36 7-48 19v179c14-13 30-20 49-20h69c11 0 20-9 20-20V180Z" fill="url(#page)"/>
+  <path d="M118 180c0-11 9-20 20-20h70c19 0 36 7 48 19v179c-14-13-30-20-49-20h-69c-11 0-20-9-20-20V180Z" stroke="#D8E7DB" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M394 180c0-11-9-20-20-20h-70c-19 0-36 7-48 19v179c14-13 30-20 49-20h69c11 0 20-9 20-20V180Z" stroke="#D8E7DB" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M151 212c24-8 48-7 69 3M151 244c24-8 48-7 69 3M151 276c24-8 48-7 69 3" stroke="#A9C9B3" stroke-width="8" stroke-linecap="round"/>
+  <path d="M361 212c-24-8-48-7-69 3M361 244c-24-8-48-7-69 3M361 276c-24-8-48-7-69 3" stroke="#A9C9B3" stroke-width="8" stroke-linecap="round"/>
+  <path d="M256 181v177" stroke="url(#coral)" stroke-width="13" stroke-linecap="round"/>
+  <path d="m383 104 8 20 20 8-20 8-8 20-8-20-20-8 20-8 8-20Z" fill="#ED8B68"/>
+  <circle cx="130" cy="128" r="6" fill="#B7D8BD"/>
 </svg>

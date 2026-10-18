@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlarmClock, ArrowLeft, Calculator, Check, CheckCheck, Clock3, Hash,
-  FileText, Gamepad2, GraduationCap, LayoutDashboard, ListTodo, LoaderCircle, MoreHorizontal, Pause,
+  FileText, Gamepad2, BookOpen, LayoutDashboard, ListTodo, LoaderCircle, MoreHorizontal, Pause,
   Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload, Zap,
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
@@ -426,13 +426,13 @@ function App() {
 
   return <div className="app-shell" data-theme={theme} dir="rtl">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><GraduationCap size={22} /></div><div><div className="brand-name">رَفيق</div><div className="brand-sub">رفيق رحلتك الدراسية</div></div></div>
+      <div className="brand"><div className="brand-mark"><BookOpen size={22} /></div><div><div className="brand-name">منصة الطالب</div><div className="brand-sub">تعلم، تركيز، وإنجاز</div></div></div>
       <div className="nav-caption">مساحتك الدراسية</div>
       <nav className="nav-list">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={`nav-item ${section === id ? 'active' : ''}`} onClick={() => setSection(id)}><Icon size={18} strokeWidth={1.8} /><span>{label}</span></button>)}</nav>
       <div className="sidebar-bottom"><div className="daily-card"><strong>خطوة هادئة تكفي</strong><p>لا تحتاج أن تنجز كل شيء اليوم. اختر ما يهم وابدأ منه.</p></div><div className="profile"><div className="profile-avatar">ط</div><div><div className="profile-name">رحلتك، على مهل</div><div className="profile-caption">مساحة دراسة شخصية</div></div></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="breadcrumb">رفيق <span style={{ margin: '0 8px', color: '#c0c9c2' }}>/</span> <b>{titleBySection[section]}</b></div><div className="top-actions"><span className="date-chip"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginLeft: 6 }} />{formatDate()}</span><button className="icon-btn" title="ابدأ مؤقّت الدراسة" aria-label="ابدأ مؤقّت الدراسة" onClick={() => setSection('timer')}><AlarmClock size={17} /></button><button className="icon-btn theme-toggle" title={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-pressed={theme === 'dark'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
+      <header className="topbar"><div className="breadcrumb">منصة الطالب <span style={{ margin: '0 8px', color: '#c0c9c2' }}>/</span> <b>{titleBySection[section]}</b></div><div className="top-actions"><span className="date-chip"><CalendarDays size={14} style={{ verticalAlign: 'middle', marginLeft: 6 }} />{formatDate()}</span><button className="icon-btn" title="ابدأ مؤقّت الدراسة" aria-label="ابدأ مؤقّت الدراسة" onClick={() => setSection('timer')}><AlarmClock size={17} /></button><button className="icon-btn theme-toggle" title={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-label={theme === 'dark' ? 'تفعيل الوضع الفاتح' : 'تفعيل الوضع الداكن'} aria-pressed={theme === 'dark'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
       <div className="page-head"><div><div className="eyebrow">{section === 'overview' ? 'مساحة صغيرة، إنجازات كبيرة' : 'مساحتك الدراسية'}</div><h1 className="page-title">{section === 'overview' ? 'أهلاً بك، لنبدأ على مهل' : titleBySection[section]}</h1><p className="page-subtitle">{section === 'overview' ? 'كل خطوة صغيرة اليوم تقرّبك مما تريد.' : section === 'tasks' ? 'رتّب ما عليك، واترك مساحة لما تحب.' : section === 'notes' ? 'أفكارك وملاحظاتك، في مكان واحد.' : section === 'timer' ? 'وقت تركيز واضح، تتبعه استراحة مستحقة.' : section === 'library' ? 'كتبك وملفاتك الدراسية قريبة منك.' : 'استراحة قصيرة تعيد ذهنك إلى صفائه.'}</p></div>
         {(section === 'tasks' || section === 'overview') && <button className="primary-btn" onClick={() => openModal('task')}><Plus size={16} /> مهمة جديدة</button>}
         {section === 'notes' && <button className="primary-btn" onClick={() => openModal('note')}><Plus size={16} /> ملاحظة جديدة</button>}

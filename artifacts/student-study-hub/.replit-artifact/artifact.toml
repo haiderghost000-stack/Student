@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "مساحة الطالب"
+title = "منصة الطالب"
 description = "مساحة دراسة عربية تساعد الطلاب على تنظيم المهام والملاحظات وجلسات التركيز، وقراءة ملفات PDF، والاستراحة بألعاب خفيفة."
 version = "1.0.0"
 id = "artifacts/student-study-hub"
