@@ -201,6 +201,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .pdf-row { padding:11px 9px;border-radius:10px;display:flex;align-items:center;gap:10px;cursor:pointer; }
 .pdf-row:hover,.pdf-row.active { background:#edf3ec; }
 .pdf-icon { width:34px;height:38px;border-radius:8px;background:#f5e6e1;color:#ae6a5d;display:grid;place-items:center;flex:0 0 auto; }
+.pdf-cover { position:relative;width:48px;height:64px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border:1px solid #e0e6df;border-radius:5px;background:#fff;color:#ae6a5d;box-shadow:0 2px 5px #24382d12; }
+.pdf-cover img { display:block;width:100%;height:100%;object-fit:contain;background:#fff; }
+.pdf-cover-page { position:absolute;inset-inline-start:3px;top:3px;min-width:13px;padding:1px 3px;border-radius:3px;background:#fff;color:#71847a;text-align:center;font-size:8px;line-height:1.4;box-shadow:0 1px 4px #24382d24; }
 .pdf-name { font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .pdf-meta { font-size:10px;color:#98a49e;margin-top:3px; }
 .pdf-row-info { min-width:0;flex:1; }

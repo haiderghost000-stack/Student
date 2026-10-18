@@ -6,10 +6,11 @@ import {
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
 const PdfReader = lazy(() => import('./PdfReader'));
+const createPdfCover = async (file: Blob) => (await import('./pdfCover')).createPdfCover(file);
 
 type Task = { id: string; title: string; subject: string; dueDate: string; priority: string; completed: boolean };
 type Note = { id: string; title: string; content: string; subject: string; updatedAt: string };
-type PdfMeta = { id: string; name: string; size: number; addedAt: string };
+type PdfMeta = { id: string; name: string; size: number; addedAt: string; cover?: string };
 type PdfRecord = PdfMeta & { file: File };
 type MathQuestion = { first: number; second: number; operation: '+' | '−' | '×'; answer: number; options: number[] };
 type XoMark = 'X' | 'O';
@@ -81,7 +82,7 @@ async function listPdfs(): Promise<PdfMeta[]> {
     request.onerror = () => reject(request.error);
   });
   db.close();
-  return records.map(({ id, name, size, addedAt }) => ({ id, name, size, addedAt })).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+  return records.map(({ id, name, size, addedAt, cover }) => ({ id, name, size, addedAt, cover })).sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 }
 const formatDate = (date = new Date()) => new Intl.DateTimeFormat('ar', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
 const formatSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} ك.ب` : `${(size / 1024 / 1024).toFixed(1)} م.ب`;
@@ -116,6 +117,7 @@ function App() {
   const [activePdf, setActivePdf] = useState<PdfMeta | null>(null);
   const [activePdfFile, setActivePdfFile] = useState<Blob | null>(null);
   const [pdfError, setPdfError] = useState('');
+  const [pdfUploading, setPdfUploading] = useState(false);
   const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [running, setRunning] = useState(false);
@@ -149,7 +151,30 @@ function App() {
     toastTimeout.current = setTimeout(() => setToast(''), 2600);
   };
   useEffect(() => {
-    listPdfs().then(setPdfs).catch(() => setPdfError('تعذّر فتح مكتبتك على هذا المتصفح.'));
+    let cancelled = false;
+    void (async () => {
+      try {
+        const storedPdfs = await listPdfs();
+        if (cancelled) return;
+        setPdfs(storedPdfs);
+        for (const pdf of storedPdfs) {
+          if (cancelled) return;
+          if (pdf.cover) continue;
+          try {
+            const record = await fetchPdf(pdf.id);
+            if (!record) continue;
+            const cover = await createPdfCover(record.file);
+            await savePdf({ ...record, cover });
+            if (!cancelled) setPdfs((current) => current.map((item) => item.id === pdf.id ? { ...item, cover } : item));
+          } catch {
+            if (!cancelled) setPdfError('تعذّر تجهيز غلاف أحد الملفات القديمة. يمكنك فتح الملف أو إعادة إضافته.');
+          }
+        }
+      } catch {
+        if (!cancelled) setPdfError('تعذّر فتح مكتبتك على هذا المتصفح.');
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     if (reactionStage !== 'waiting') return;
@@ -232,13 +257,34 @@ function App() {
   const deleteNote = (id: string) => { if (window.confirm('هل تريد حذف هذه الملاحظة؟')) { setNotes((old) => old.filter((note) => note.id !== id)); showToast('تم حذف الملاحظة.'); } };
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []).filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
-    if (!files.length) { if (event.target.files?.length) showToast('اختر ملفاً بصيغة PDF.'); return; }
+    if (!files.length) {
+      if (event.target.files?.length) showToast('اختر ملفاً بصيغة PDF.');
+      event.target.value = '';
+      return;
+    }
+    setPdfUploading(true);
     try {
-      const entries = files.map((file) => ({ id: uid(), name: file.name, size: file.size, addedAt: new Date().toISOString(), file }));
-      for (const entry of entries) await savePdf(entry);
-      setPdfs(await listPdfs()); setPdfError(''); showToast(`تمت إضافة ${entries.length} من الملفات.`);
-    } catch { setPdfError('تعذّر حفظ الملف. جرّب ملفاً أصغر أو متصفحاً حديثاً.'); }
-    event.target.value = '';
+      let missingCovers = 0;
+      for (const file of files) {
+        let cover: string | undefined;
+        try {
+          cover = await createPdfCover(file);
+        } catch {
+          missingCovers += 1;
+        }
+        await savePdf({ id: uid(), name: file.name, size: file.size, addedAt: new Date().toISOString(), file, cover });
+      }
+      setPdfs(await listPdfs());
+      setPdfError('');
+      showToast(missingCovers
+        ? `تمت إضافة الملفات، لكن تعذّر تجهيز غلاف ${missingCovers} منها.`
+        : `تمت إضافة ${files.length} من الملفات مع أغلفتها.`);
+    } catch {
+      setPdfError('تعذّر حفظ الملف. جرّب ملفاً أصغر أو متصفحاً حديثاً.');
+    } finally {
+      setPdfUploading(false);
+      event.target.value = '';
+    }
   };
   const selectPdf = async (pdf: PdfMeta) => {
     try {
@@ -387,7 +433,7 @@ function App() {
       </div>}
 
       {section === 'library' && <div className="content pdf-library">
-        <section className="panel pdf-list"><input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} /><button className="upload-zone" style={{ width: '100%' }} onClick={() => pdfInput.current?.click()}><Upload size={19} /><strong>أضف ملفاً إلى مكتبتك</strong><span>ملفات PDF محفوظة على جهازك</span></button>{pdfError && <div style={{ fontSize: 11, color: '#ad695c', padding: '2px 4px 8px' }}>{pdfError}</div>}<div className="section-heading" style={{ marginBottom: 7 }}><h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2><MoreHorizontal size={17} color="#9aa69f" /></div>{pdfs.length ? pdfs.map((pdf) => <div key={pdf.id} className="pdf-row"><button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}><span className="pdf-icon"><FileText size={17} /></span><span className="pdf-row-info"><span className="pdf-name">{pdf.name}</span><span className="pdf-meta">{formatSize(pdf.size)}</span></span></button><button className="small-icon" aria-label="حذف الملف" onClick={() => deletePdf(pdf)}><Trash2 size={13} /></button></div>) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}</section>
+        <section className="panel pdf-list"><input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} /><button className="upload-zone" style={{ width: '100%' }} disabled={pdfUploading} onClick={() => pdfInput.current?.click()}><Upload size={19} /><strong>{pdfUploading ? 'جارٍ تجهيز أغلفة الملفات…' : 'أضف ملفاً إلى مكتبتك'}</strong><span>ملفات PDF محفوظة على جهازك · الغلاف من الصفحة الأولى</span></button>{pdfError && <div style={{ fontSize: 11, color: '#ad695c', padding: '2px 4px 8px' }}>{pdfError}</div>}<div className="section-heading" style={{ marginBottom: 7 }}><h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2><MoreHorizontal size={17} color="#9aa69f" /></div>{pdfs.length ? pdfs.map((pdf) => <div key={pdf.id} className="pdf-row"><button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}><span className="pdf-cover" aria-hidden="true">{pdf.cover ? <img src={pdf.cover} alt="" loading="lazy" /> : <FileText size={18} />}<span className="pdf-cover-page">1</span></span><span className="pdf-row-info"><span className="pdf-name">{pdf.name}</span><span className="pdf-meta">{formatSize(pdf.size)} · الغلاف: الصفحة الأولى</span></span></button><button className="small-icon" aria-label="حذف الملف" onClick={() => deletePdf(pdf)}><Trash2 size={13} /></button></div>) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}</section>
       </div>}
 
       {section === 'games' && <div className="content games-grid">
