@@ -118,6 +118,7 @@ function App() {
   const [activePdfFile, setActivePdfFile] = useState<Blob | null>(null);
   const [pdfError, setPdfError] = useState('');
   const [pdfUploading, setPdfUploading] = useState(false);
+  const [retryingCoverIds, setRetryingCoverIds] = useState<Set<string>>(() => new Set());
   const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [running, setRunning] = useState(false);
@@ -144,11 +145,48 @@ function App() {
   const pdfInput = useRef<HTMLInputElement>(null);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reactionReadyAt = useRef(0);
+  const coverRetryJobs = useRef(new Map<string, Promise<void>>());
 
   const showToast = (message: string) => {
     setToast(message);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setToast(''), 2600);
+  };
+  const retryPdfCover = (pdf: PdfMeta, notify = false): Promise<void> => {
+    const existingJob = coverRetryJobs.current.get(pdf.id);
+    if (existingJob) return existingJob;
+
+    const job = (async () => {
+      setRetryingCoverIds((current) => new Set(current).add(pdf.id));
+      try {
+        const record = await fetchPdf(pdf.id);
+        if (!record) throw new Error('The saved PDF could not be found.');
+
+        if (record.cover) {
+          setPdfs((current) => current.map((item) => item.id === pdf.id ? { ...item, cover: record.cover } : item));
+          return;
+        }
+
+        const cover = await createPdfCover(record.file);
+        await savePdf({ ...record, cover });
+        setPdfs((current) => current.map((item) => item.id === pdf.id ? { ...item, cover } : item));
+        if (notify) {
+          setPdfError('');
+          showToast('تم تجهيز غلاف الملف بنجاح.');
+        }
+      } catch {
+        setPdfError(`تعذّر تجهيز غلاف «${pdf.name}». بقي ملف PDF محفوظاً، ويمكنك المحاولة مجدداً.`);
+      } finally {
+        coverRetryJobs.current.delete(pdf.id);
+        setRetryingCoverIds((current) => {
+          const next = new Set(current);
+          next.delete(pdf.id);
+          return next;
+        });
+      }
+    })();
+    coverRetryJobs.current.set(pdf.id, job);
+    return job;
   };
   useEffect(() => {
     let cancelled = false;
@@ -160,15 +198,7 @@ function App() {
         for (const pdf of storedPdfs) {
           if (cancelled) return;
           if (pdf.cover) continue;
-          try {
-            const record = await fetchPdf(pdf.id);
-            if (!record) continue;
-            const cover = await createPdfCover(record.file);
-            await savePdf({ ...record, cover });
-            if (!cancelled) setPdfs((current) => current.map((item) => item.id === pdf.id ? { ...item, cover } : item));
-          } catch {
-            if (!cancelled) setPdfError('تعذّر تجهيز غلاف أحد الملفات القديمة. يمكنك فتح الملف أو إعادة إضافته.');
-          }
+          await retryPdfCover(pdf);
         }
       } catch {
         if (!cancelled) setPdfError('تعذّر فتح مكتبتك على هذا المتصفح.');
@@ -433,7 +463,48 @@ function App() {
       </div>}
 
       {section === 'library' && <div className="content pdf-library">
-        <section className="panel pdf-list"><input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} /><button className="upload-zone" style={{ width: '100%' }} disabled={pdfUploading} onClick={() => pdfInput.current?.click()}><Upload size={19} /><strong>{pdfUploading ? 'جارٍ تجهيز أغلفة الملفات…' : 'أضف ملفاً إلى مكتبتك'}</strong><span>ملفات PDF محفوظة على جهازك · الغلاف من الصفحة الأولى</span></button>{pdfError && <div style={{ fontSize: 11, color: '#ad695c', padding: '2px 4px 8px' }}>{pdfError}</div>}<div className="section-heading" style={{ marginBottom: 7 }}><h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2><MoreHorizontal size={17} color="#9aa69f" /></div>{pdfs.length ? pdfs.map((pdf) => <div key={pdf.id} className="pdf-row"><button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}><span className="pdf-cover" aria-hidden="true">{pdf.cover ? <img src={pdf.cover} alt="" loading="lazy" /> : <FileText size={18} />}<span className="pdf-cover-page">1</span></span><span className="pdf-row-info"><span className="pdf-name">{pdf.name}</span><span className="pdf-meta">{formatSize(pdf.size)} · الغلاف: الصفحة الأولى</span></span></button><button className="small-icon" aria-label="حذف الملف" onClick={() => deletePdf(pdf)}><Trash2 size={13} /></button></div>) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}</section>
+        <section className="panel pdf-list">
+          <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleUpload} />
+          <button className="upload-zone" style={{ width: '100%' }} disabled={pdfUploading} onClick={() => pdfInput.current?.click()}>
+            <Upload size={19} />
+            <strong>{pdfUploading ? 'جارٍ تجهيز أغلفة الملفات…' : 'أضف ملفاً إلى مكتبتك'}</strong>
+            <span>ملفات PDF محفوظة على جهازك · الغلاف من الصفحة الأولى</span>
+          </button>
+          {pdfError && <div className="pdf-error" role="alert">{pdfError}</div>}
+          <div className="section-heading" style={{ marginBottom: 7 }}>
+            <h2>ملفاتك <span style={{ color: '#9aa69f', fontWeight: 400 }}>({pdfs.length})</span></h2>
+            <MoreHorizontal size={17} color="#9aa69f" />
+          </div>
+          {pdfs.length ? pdfs.map((pdf) => {
+            const isRetrying = retryingCoverIds.has(pdf.id);
+            return <div key={pdf.id} className="pdf-row">
+              <button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}>
+                <span className="pdf-cover" aria-hidden="true">
+                  {pdf.cover ? <img src={pdf.cover} alt="" loading="lazy" /> : <FileText size={18} />}
+                  <span className="pdf-cover-page">1</span>
+                </span>
+                <span className="pdf-row-info">
+                  <span className="pdf-name">{pdf.name}</span>
+                  <span className="pdf-meta">{formatSize(pdf.size)} · الغلاف: الصفحة الأولى</span>
+                </span>
+              </button>
+              <div className="pdf-row-actions">
+                {!pdf.cover && <button
+                  className="pdf-retry-button"
+                  aria-label={`إعادة تجهيز غلاف ${pdf.name}`}
+                  disabled={isRetrying}
+                  onClick={() => { void retryPdfCover(pdf, true); }}
+                >
+                  {isRetrying ? <LoaderCircle size={13} className="pdf-retry-spinner" /> : <RotateCcw size={13} />}
+                  <span>{isRetrying ? 'جارٍ التجهيز' : 'إعادة المحاولة'}</span>
+                </button>}
+                <button className="small-icon" aria-label="حذف الملف" disabled={isRetrying} onClick={() => deletePdf(pdf)}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>;
+          }) : <div className="empty" style={{ padding: '25px 8px' }}><strong>مكتبتك فارغة</strong><p>أضف أول ملف دراسي لتقرأه هنا.</p></div>}
+        </section>
       </div>}
 
       {section === 'games' && <div className="content games-grid">

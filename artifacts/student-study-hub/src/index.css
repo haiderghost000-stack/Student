@@ -200,6 +200,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .upload-zone span { font-size:10px; }
 .pdf-row { padding:11px 9px;border-radius:10px;display:flex;align-items:center;gap:10px;cursor:pointer; }
 .pdf-row:hover,.pdf-row.active { background:#edf3ec; }
+.pdf-row-actions { display:flex;align-items:center;gap:4px;flex:0 0 auto; }
+.pdf-retry-button { display:flex;align-items:center;gap:5px;border:1px solid #dce7dc;border-radius:8px;background:#f6faf5;color:#58766b;padding:6px 8px;font-size:10px;white-space:nowrap; }
+.pdf-retry-button:not(:disabled):hover { background:#eaf3e9;border-color:#cbdccf; }
+.pdf-retry-spinner { animation:pdf-spin .8s linear infinite; }
+.pdf-error { padding:2px 4px 8px;color:#ad695c;font-size:11px; }
 .pdf-icon { width:34px;height:38px;border-radius:8px;background:#f5e6e1;color:#ae6a5d;display:grid;place-items:center;flex:0 0 auto; }
 .pdf-cover { position:relative;width:48px;height:64px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border:1px solid #e0e6df;border-radius:5px;background:#fff;color:#ae6a5d;box-shadow:0 2px 5px #24382d12; }
 .pdf-cover img { display:block;width:100%;height:100%;object-fit:contain;background:#fff; }
@@ -479,6 +484,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .app-shell[data-theme='dark'] .pdf-row.active { background:#293d31; }
 .app-shell[data-theme='dark'] .upload-zone strong { color:#c0d9c7; }
 .app-shell[data-theme='dark'] .pdf-icon { color:#e6a89d;background:#462e2c; }
+.app-shell[data-theme='dark'] .pdf-retry-button { color:#b5d2c0;background:#22352a;border-color:#405848; }
+.app-shell[data-theme='dark'] .pdf-retry-button:not(:disabled):hover { background:#2c4635;border-color:#52715a; }
+.app-shell[data-theme='dark'] .pdf-error { color:#efaaa0; }
 .app-shell[data-theme='dark'] .pdf-fullscreen,.app-shell[data-theme='dark'] .pdf-fullscreen-loading { background:#131b17;color:#e5eee8; }
 .app-shell[data-theme='dark'] .pdf-fullscreen-header { background:#1c2a24;border-color:var(--line); }
 .app-shell[data-theme='dark'] .pdf-close-button { color:#c7d8cd;background:#1e2c25;border-color:#3a5044; }
