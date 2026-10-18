@@ -122,6 +122,8 @@ function App() {
   const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [running, setRunning] = useState(false);
+  const alarmAudioContextRef = useRef<AudioContext | null>(null);
+  const timerCompletionHandledRef = useRef(false);
   const [xo, setXo] = useState<XoBoard>(Array(9).fill(null));
   const [xoMode, setXoMode] = useState<'computer' | 'two-player'>('computer');
   const [memoryPairs, setMemoryPairs] = useState(6);
@@ -151,6 +153,49 @@ function App() {
     setToast(message);
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setToast(''), 2600);
+  };
+  const unlockTimerAudio = () => {
+    if (typeof window.AudioContext === 'undefined') return;
+    try {
+      alarmAudioContextRef.current ??= new window.AudioContext();
+      if (alarmAudioContextRef.current.state === 'suspended') {
+        void alarmAudioContextRef.current.resume().catch(() => {});
+      }
+    } catch {
+      // Audio is optional on browsers that do not expose the Web Audio API.
+    }
+  };
+  const playTimerAlarm = () => {
+    const context = alarmAudioContextRef.current;
+    if (!context) return;
+
+    const play = () => {
+      const startAt = context.currentTime + 0.03;
+      const oscillator = context.createOscillator();
+      const volume = context.createGain();
+      oscillator.type = 'triangle';
+      oscillator.connect(volume);
+      volume.connect(context.destination);
+
+      for (let pulse = 0; pulse < 5; pulse += 1) {
+        const pulseStart = startAt + pulse;
+        oscillator.frequency.setValueAtTime(pulse % 2 ? 740 : 880, pulseStart);
+        volume.gain.setValueAtTime(0.0001, pulseStart);
+        volume.gain.exponentialRampToValueAtTime(0.62, pulseStart + 0.025);
+        volume.gain.setValueAtTime(0.62, pulseStart + 0.46);
+        volume.gain.exponentialRampToValueAtTime(0.0001, pulseStart + 0.52);
+      }
+
+      oscillator.addEventListener('ended', () => {
+        oscillator.disconnect();
+        volume.disconnect();
+      }, { once: true });
+      oscillator.start(startAt);
+      oscillator.stop(startAt + 5);
+    };
+
+    if (context.state === 'running') play();
+    else void context.resume().then(play).catch(() => {});
   };
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -236,27 +281,29 @@ function App() {
   }, [reactionStage]);
   useEffect(() => {
     if (!running) return;
-    const interval = setInterval(() => {
-      setSecondsLeft((value) => {
-        if (value > 1) return value - 1;
-        setRunning(false);
-        if (timerMode === 'focus') {
-          setStats((old) => {
-            const today = new Date().toISOString().slice(0, 10);
-            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-            return { sessions: old.sessions + 1, focusSeconds: old.focusSeconds + focusMinutes * 60, streak: old.lastStudyDay === today ? old.streak : old.lastStudyDay === yesterday ? old.streak + 1 : 1, lastStudyDay: today };
-          });
-          setTimerMode('break');
-          showToast('أحسنت، حان وقت استراحة قصيرة.');
-          return breakMinutes * 60;
-        }
-        setTimerMode('focus');
-        showToast('انتهت الاستراحة، مستعد لجولة جديدة؟');
-        return focusMinutes * 60;
-      });
-    }, 1000);
+    const interval = setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
     return () => clearInterval(interval);
-  }, [running, timerMode, focusMinutes, breakMinutes]);
+  }, [running]);
+  useEffect(() => {
+    if (!running || secondsLeft > 0 || timerCompletionHandledRef.current) return;
+    timerCompletionHandledRef.current = true;
+    setRunning(false);
+    playTimerAlarm();
+    if (timerMode === 'focus') {
+      setStats((old) => {
+        const today = new Date().toISOString().slice(0, 10);
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        return { sessions: old.sessions + 1, focusSeconds: old.focusSeconds + focusMinutes * 60, streak: old.lastStudyDay === today ? old.streak : old.lastStudyDay === yesterday ? old.streak + 1 : 1, lastStudyDay: today };
+      });
+      setTimerMode('break');
+      setSecondsLeft(breakMinutes * 60);
+      showToast('أحسنت، حان وقت استراحة قصيرة.');
+      return;
+    }
+    setTimerMode('focus');
+    setSecondsLeft(focusMinutes * 60);
+    showToast('انتهت الاستراحة، مستعد لجولة جديدة؟');
+  }, [running, secondsLeft, timerMode, focusMinutes, breakMinutes]);
   useEffect(() => { if (!running) setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); }, [focusMinutes, breakMinutes, timerMode, running]);
   const xoWinnerMark = xoWinner(xo);
   const xoTurn: XoMark = xo.filter((mark) => mark !== null).length % 2 === 0 ? 'X' : 'O';
@@ -478,8 +525,8 @@ function App() {
       {section === 'notes' && <div className="content">{notes.length ? <div className="notes-grid">{notes.map((note) => <article key={note.id} className="panel note-card" onClick={() => openModal('note', note.id)}><div className="note-card-top"><span className="note-subject">{note.subject}</span><button className="small-icon" aria-label="حذف الملاحظة" onClick={(event) => { event.stopPropagation(); deleteNote(note.id); }}><Trash2 size={14} /></button></div><h3>{note.title}</h3><p className="note-preview">{note.content || 'لا يوجد نص بعد.'}</p><div className="note-date">آخر تحديث · {new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'long' }).format(new Date(note.updatedAt))}</div></article>)}</div> : <div className="panel"><div className="empty"><div className="empty-icon"><StickyNote size={21} /></div><strong>دفترك ما زال ينتظر أول فكرة</strong><p>دوّن شرحاً، سؤالاً أو فكرة تخشى أن تنساها.</p><button className="primary-btn" style={{ marginTop: 16 }} onClick={() => openModal('note')}><Plus size={15} /> اكتب ملاحظة</button></div></div>}</div>}
 
       {section === 'timer' && <div className="content timer-layout">
-        <section className="panel timer-main"><div className="timer-core"><div className="mode-switch"><button className={timerMode === 'focus' ? 'active' : ''} onClick={() => setMode('focus')}>تركيز</button><button className={timerMode === 'break' ? 'active' : ''} onClick={() => setMode('break')}>استراحة</button></div><div className="timer-display">{timerDisplay}</div><div className="timer-caption">{running ? timerMode === 'focus' ? 'أنت في جلسة تركيز، أحسنت.' : 'خذ نفساً عميقاً.' : 'كل دقيقة تمنحها لنفسك تستحق.'}</div><div className="timer-actions"><button className="round-btn" aria-label="إعادة ضبط المؤقت" onClick={resetTimer}><RotateCcw size={17} /></button><button className="round-btn play" aria-label={running ? 'إيقاف مؤقت' : 'ابدأ المؤقت'} onClick={() => setRunning((value) => !value)}>{running ? <Pause size={19} /> : <Play size={19} />}</button><button className="round-btn" aria-label="انتقل إلى الوضع التالي" onClick={() => setMode(timerMode === 'focus' ? 'break' : 'focus')}><ArrowLeft size={17} /></button></div></div></section>
-        <section className="panel timer-settings"><div className="section-heading"><h2>تخصيص وقتك</h2><Settings2 size={17} color="#81948a" /></div>{([{ mode: 'focus' as const, label: 'مدة التركيز', value: focusMinutes }, { mode: 'break' as const, label: 'مدة الاستراحة', value: breakMinutes }]).map((item) => <div className="duration-row" key={item.mode}><span>{item.label}</span><div className="duration-control"><button aria-label={`تقليل ${item.label}`} onClick={() => adjustDuration(item.mode, -1)}><Minus size={13} /></button><b>{item.value}</b><button aria-label={`زيادة ${item.label}`} onClick={() => adjustDuration(item.mode, 1)}><Plus size={13} /></button><small style={{ color: '#94a19a' }}>دقيقة</small></div></div>)}<div className="session-info"><Clock3 size={14} style={{ verticalAlign: 'middle', marginLeft: 5 }} /> عند انتهاء المؤقت ينتقل تلقائياً إلى الوضع التالي. سيتم حفظ تفضيلاتك وجلساتك على هذا الجهاز.</div><div style={{ marginTop: 17, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8b9a92' }}><span>جلسات مكتملة</span><strong style={{ color: '#587a6d' }}>{stats.sessions}</strong></div></section>
+        <section className="panel timer-main"><div className="timer-core"><div className="mode-switch"><button className={timerMode === 'focus' ? 'active' : ''} onClick={() => setMode('focus')}>تركيز</button><button className={timerMode === 'break' ? 'active' : ''} onClick={() => setMode('break')}>استراحة</button></div><div className="timer-display">{timerDisplay}</div><div className="timer-caption">{running ? timerMode === 'focus' ? 'أنت في جلسة تركيز، أحسنت.' : 'خذ نفساً عميقاً.' : 'كل دقيقة تمنحها لنفسك تستحق.'}</div><div className="timer-actions"><button className="round-btn" aria-label="إعادة ضبط المؤقت" onClick={resetTimer}><RotateCcw size={17} /></button><button className="round-btn play" aria-label={running ? 'إيقاف مؤقت' : 'ابدأ المؤقت'} onClick={() => { if (!running) { unlockTimerAudio(); timerCompletionHandledRef.current = false; } setRunning((value) => !value); }}>{running ? <Pause size={19} /> : <Play size={19} />}</button><button className="round-btn" aria-label="انتقل إلى الوضع التالي" onClick={() => setMode(timerMode === 'focus' ? 'break' : 'focus')}><ArrowLeft size={17} /></button></div></div></section>
+        <section className="panel timer-settings"><div className="section-heading"><h2>تخصيص وقتك</h2><Settings2 size={17} color="#81948a" /></div>{([{ mode: 'focus' as const, label: 'مدة التركيز', value: focusMinutes }, { mode: 'break' as const, label: 'مدة الاستراحة', value: breakMinutes }]).map((item) => <div className="duration-row" key={item.mode}><span>{item.label}</span><div className="duration-control"><button aria-label={`تقليل ${item.label}`} onClick={() => adjustDuration(item.mode, -1)}><Minus size={13} /></button><b>{item.value}</b><button aria-label={`زيادة ${item.label}`} onClick={() => adjustDuration(item.mode, 1)}><Plus size={13} /></button><small style={{ color: '#94a19a' }}>دقيقة</small></div></div>)}<div className="session-info"><Clock3 size={14} style={{ verticalAlign: 'middle', marginLeft: 5 }} /> عند انتهاء كل فترة، يصدر تنبيه صوتي لمدة 5 ثوانٍ ثم ينتقل المؤقت إلى الوضع التالي. تُحفظ تفضيلاتك وجلساتك على هذا الجهاز.</div><div style={{ marginTop: 17, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8b9a92' }}><span>جلسات مكتملة</span><strong style={{ color: '#587a6d' }}>{stats.sessions}</strong></div></section>
       </div>}
 
       {section === 'library' && <div className="content pdf-library">
