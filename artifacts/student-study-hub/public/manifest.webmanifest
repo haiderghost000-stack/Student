@@ -1,12 +1,12 @@
 {
-  "id": "/",
+  "id": "./",
   "name": "منصة الطالب",
   "short_name": "منصة الطالب",
   "description": "مساحة عربية متكاملة لتنظيم الدراسة والتركيز وقراءة ملفاتك.",
   "lang": "ar",
   "dir": "rtl",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#F7F3EA",
   "theme_color": "#1D5C4A",
@@ -29,5 +29,21 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "share-target/",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["application/pdf", ".pdf"]
+        }
+      ]
+    }
+  }
 }

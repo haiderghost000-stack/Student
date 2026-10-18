@@ -300,6 +300,8 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const hasRenderedRef = useRef(false);
+  const renderedSizeRef = useRef<PageSize | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -337,7 +339,12 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
     if (!nearViewport) {
       canvas.width = 0;
       canvas.height = 0;
+      canvas.style.width = '';
+      canvas.style.height = '';
       textContainer.replaceChildren();
+      textContainer.style.transform = '';
+      hasRenderedRef.current = false;
+      renderedSizeRef.current = null;
       setRendering(false);
       return;
     }
@@ -345,8 +352,15 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
     let renderTask: { cancel: () => void; promise: Promise<void> } | null = null;
     let textLayer: TextLayer | null = null;
     let restoreCanvasText: (() => void) | null = null;
+    let pendingTextContainer: HTMLDivElement | null = null;
     setRendering(true);
     setPageError('');
+    const previousRenderedSize = renderedSizeRef.current;
+    if (hasRenderedRef.current && previousRenderedSize) {
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+      textContainer.style.transform = `scale(${viewport.width / previousRenderedSize.width})`;
+    }
 
     void (async () => {
       try {
@@ -371,21 +385,27 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
               : style,
           ])),
         } : textContent;
-        textContainer.replaceChildren();
-        textContainer.classList.toggle('arabic-readable', containsArabic);
-        textContainer.style.width = `${viewport.width}px`;
-        textContainer.style.height = `${viewport.height}px`;
-        textContainer.style.setProperty('--total-scale-factor', String(viewport.scale));
-        textLayer = new TextLayer({ textContentSource: textContentForLayer, container: textContainer, viewport });
-
         const outputScale = Math.min(window.devicePixelRatio || 1, 2);
-        const context = canvas.getContext('2d', { alpha: false });
+        const renderCanvas = window.document.createElement('canvas');
+        renderCanvas.width = Math.floor(viewport.width * outputScale);
+        renderCanvas.height = Math.floor(viewport.height * outputScale);
+        const context = renderCanvas.getContext('2d', { alpha: false });
         if (!context) throw new Error('Canvas rendering is unavailable.');
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+
+        pendingTextContainer = window.document.createElement('div');
+        pendingTextContainer.className = 'pdf-text-layer';
+        pendingTextContainer.classList.toggle('arabic-readable', containsArabic);
+        pendingTextContainer.style.position = 'fixed';
+        pendingTextContainer.style.inset = 'auto';
+        pendingTextContainer.style.left = '-100000px';
+        pendingTextContainer.style.top = '0';
+        pendingTextContainer.style.direction = 'ltr';
+        pendingTextContainer.style.width = `${viewport.width}px`;
+        pendingTextContainer.style.height = `${viewport.height}px`;
+        pendingTextContainer.style.setProperty('--total-scale-factor', String(viewport.scale));
+        window.document.body.append(pendingTextContainer);
+        textLayer = new TextLayer({ textContentSource: textContentForLayer, container: pendingTextContainer, viewport });
 
         const originalFillText = context.fillText.bind(context);
         const originalStrokeText = context.strokeText.bind(context);
@@ -398,7 +418,7 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
           };
         }
         const textRenderPromise = textLayer.render();
-        renderTask = page.render({ canvas, canvasContext: context, viewport });
+        renderTask = page.render({ canvas: renderCanvas, canvasContext: context, viewport });
         const pageRenderPromise = Promise.allSettled([renderTask.promise, textRenderPromise]).then((results) => {
           restoreCanvasText?.();
           restoreCanvasText = null;
@@ -407,12 +427,31 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
         });
         renderQueueRef.current = pageRenderPromise.then(() => {}, () => {});
         await pageRenderPromise;
-        if (!cancelled) {
-          setRendering(false);
-          onRendered?.(true);
-        }
+        if (cancelled) return;
+
+        canvas.width = renderCanvas.width;
+        canvas.height = renderCanvas.height;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const visibleContext = canvas.getContext('2d', { alpha: false });
+        if (!visibleContext) throw new Error('Canvas rendering is unavailable.');
+        visibleContext.drawImage(renderCanvas, 0, 0);
+        textContainer.classList.toggle('arabic-readable', containsArabic);
+        textContainer.style.width = `${viewport.width}px`;
+        textContainer.style.height = `${viewport.height}px`;
+        textContainer.style.setProperty('--total-scale-factor', String(viewport.scale));
+        textContainer.style.transform = '';
+        textContainer.replaceChildren(...Array.from(pendingTextContainer?.childNodes ?? []));
+        pendingTextContainer?.remove();
+        pendingTextContainer = null;
+        hasRenderedRef.current = true;
+        renderedSizeRef.current = { width: viewport.width, height: viewport.height };
+        setRendering(false);
+        onRendered?.(true);
       } catch (renderError) {
         restoreCanvasText?.();
+        pendingTextContainer?.remove();
+        pendingTextContainer = null;
         if (cancelled || (renderError instanceof Error && renderError.name === 'RenderingCancelledException')) return;
         setPageError('تعذّر عرض الصفحة. جرّب إعادة فتح الملف.');
         setRendering(false);
@@ -423,6 +462,7 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
       cancelled = true;
       renderTask?.cancel();
       textLayer?.cancel();
+      pendingTextContainer?.remove();
     };
   }, [page, nearViewport, viewport?.width, viewport?.height, viewport?.scale, onRendered]);
 
@@ -435,7 +475,7 @@ function PdfPage({ document, pageNumber, zoom, viewerWidth, onRendered }: PdfPag
   >
     <canvas ref={canvasRef} className="pdf-page-canvas" aria-hidden="true" />
     <div ref={textLayerRef} className="pdf-text-layer" aria-hidden="true" />
-    {rendering && <div className="pdf-page-placeholder"><LoaderCircle size={20} className="pdf-loader" /><span>صفحة {pageNumber}</span></div>}
+    {rendering && !hasRenderedRef.current && <div className="pdf-page-placeholder"><LoaderCircle size={20} className="pdf-loader" /><span>صفحة {pageNumber}</span></div>}
     {pageError && <div className="pdf-page-placeholder pdf-page-error" role="alert">{pageError}</div>}
   </section>;
 }

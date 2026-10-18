@@ -152,6 +152,26 @@ function App() {
     if (toastTimeout.current) clearTimeout(toastTimeout.current);
     toastTimeout.current = setTimeout(() => setToast(''), 2600);
   };
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('shared') && !params.has('shareError')) return;
+
+    const receivedCount = Number(params.get('shared') || 0);
+    const unsupportedCount = Number(params.get('unsupported') || 0);
+    if (params.has('shareError')) {
+      showToast('تعذّر استلام الملف. حاول مشاركته مرة أخرى.');
+    } else if (receivedCount > 0) {
+      setSection('library');
+      showToast(unsupportedCount
+        ? `أُضيف ${receivedCount} ملف PDF. تم تجاهل ${unsupportedCount} ملف غير مدعوم.`
+        : `تم استلام ${receivedCount} ملف PDF وإضافته إلى مكتبتك.`);
+    } else if (unsupportedCount > 0) {
+      showToast('المكتبة تستقبل ملفات PDF فقط.');
+    } else {
+      showToast('لم يصل ملف PDF مع المشاركة.');
+    }
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.hash}`);
+  }, []);
   const retryPdfCover = (pdf: PdfMeta, notify = false): Promise<void> => {
     const existingJob = coverRetryJobs.current.get(pdf.id);
     if (existingJob) return existingJob;
@@ -468,7 +488,7 @@ function App() {
           <button className="upload-zone" style={{ width: '100%' }} disabled={pdfUploading} onClick={() => pdfInput.current?.click()}>
             <Upload size={19} />
             <strong>{pdfUploading ? 'جارٍ تجهيز أغلفة الملفات…' : 'أضف ملفاً إلى مكتبتك'}</strong>
-            <span>ملفات PDF محفوظة على جهازك · الغلاف من الصفحة الأولى</span>
+            <span>اختر PDF من جهازك أو شاركه من تطبيق آخر · يُحفظ على جهازك</span>
           </button>
           {pdfError && <div className="pdf-error" role="alert">{pdfError}</div>}
           <div className="section-heading" style={{ marginBottom: 7 }}>
