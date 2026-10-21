@@ -98,6 +98,18 @@ function clearStackPreview(scrollArea: HTMLElement) {
   stack.style.willChange = '';
 }
 
+function ensureZoomPanSpace(scrollArea: HTMLElement) {
+  const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
+  if (!stack) return;
+
+  const verticalSpace = Math.max(scrollArea.clientHeight, Number.parseFloat(stack.style.paddingTop) || 0);
+  const horizontalSpace = Math.max(scrollArea.clientWidth, Number.parseFloat(stack.style.paddingLeft) || 0);
+  stack.style.paddingTop = `${verticalSpace}px`;
+  stack.style.paddingBottom = `${verticalSpace}px`;
+  stack.style.paddingLeft = `${horizontalSpace}px`;
+  stack.style.paddingRight = `${horizontalSpace}px`;
+}
+
 export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +135,7 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
       const focusX = anchorX ?? scrollArea.clientWidth / 2;
       const focusY = anchorY ?? scrollArea.clientHeight / 2;
       pendingZoomAnchorRef.current = captureZoomAnchor(scrollArea, focusX, focusY);
+      ensureZoomPanSpace(scrollArea);
     }
     zoomRef.current = nextZoom;
     setZoom(nextZoom);
@@ -252,6 +265,7 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
       }
       pendingZoomAnchorRef.current = pinch.anchor;
       clearStackPreview(scrollArea);
+      ensureZoomPanSpace(scrollArea);
       zoomRef.current = pinch.currentZoom;
       setZoom(pinch.currentZoom);
     };
