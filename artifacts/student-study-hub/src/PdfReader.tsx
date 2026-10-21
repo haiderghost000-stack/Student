@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   FileText, LoaderCircle, Maximize2, Minus, Plus, X,
 } from 'lucide-react';
@@ -12,16 +12,22 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type PdfReaderProps = { file: Blob; name: string; onClose: () => void };
 type PageSize = { width: number; height: number };
+type ZoomAnchor = {
+  pageNumber: number;
+  pageX: number;
+  pageY: number;
+  viewportX: number;
+  viewportY: number;
+};
 type PinchStart = {
   distance: number;
   zoom: number;
   currentZoom: number;
-  scrollTop: number;
-  scrollLeft: number;
   centerX: number;
   centerY: number;
   originX: number;
   originY: number;
+  anchor: ZoomAnchor | null;
   frameId: number | null;
 } | null;
 
@@ -31,6 +37,50 @@ const touchDistance = (touches: TouchList) => Math.max(1, Math.hypot(
   touches[0].clientX - touches[1].clientX,
   touches[0].clientY - touches[1].clientY,
 ));
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
+
+function captureZoomAnchor(scrollArea: HTMLElement, viewportX: number, viewportY: number): ZoomAnchor | null {
+  const areaRect = scrollArea.getBoundingClientRect();
+  const clientX = areaRect.left + viewportX;
+  const clientY = areaRect.top + viewportY;
+  const pages = Array.from(scrollArea.querySelectorAll<HTMLElement>('[data-pdf-page]'));
+  if (!pages.length) return null;
+
+  let page: HTMLElement | null = null;
+  let pageRect: DOMRect | null = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  let anchorClientX = clientX;
+  let anchorClientY = clientY;
+  for (const candidate of pages) {
+    const rect = candidate.getBoundingClientRect();
+    const withinPage = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    if (withinPage) {
+      page = candidate;
+      pageRect = rect;
+      break;
+    }
+    const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+    const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+    const distance = dx * dx + dy * dy;
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      page = candidate;
+      pageRect = rect;
+      anchorClientX = clamp(clientX, rect.left, rect.right);
+      anchorClientY = clamp(clientY, rect.top, rect.bottom);
+    }
+  }
+  if (!page || !pageRect) return null;
+  if (!pageRect.width || !pageRect.height) return null;
+
+  return {
+    pageNumber: Number(page.dataset.pdfPage),
+    pageX: clamp((anchorClientX - pageRect.left) / pageRect.width, 0, 1),
+    pageY: clamp((anchorClientY - pageRect.top) / pageRect.height, 0, 1),
+    viewportX: anchorClientX - areaRect.left,
+    viewportY: anchorClientY - areaRect.top,
+  };
+}
 
 function applyStackPreview(scrollArea: HTMLElement, baseZoom: number, previewZoom: number, originX: number, originY: number) {
   const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
@@ -58,6 +108,7 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
   const [renderReady, setRenderReady] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
+  const pendingZoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const pinchRef = useRef<PinchStart>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
@@ -68,18 +119,13 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
     const previousZoom = zoomRef.current;
     if (nextZoom === previousZoom) return;
     const scrollArea = scrollRef.current;
+    if (scrollArea) {
+      const focusX = anchorX ?? scrollArea.clientWidth / 2;
+      const focusY = anchorY ?? scrollArea.clientHeight / 2;
+      pendingZoomAnchorRef.current = captureZoomAnchor(scrollArea, focusX, focusY);
+    }
     zoomRef.current = nextZoom;
     setZoom(nextZoom);
-    if (!scrollArea) return;
-    const focusX = anchorX ?? scrollArea.clientWidth / 2;
-    const focusY = anchorY ?? scrollArea.clientHeight / 2;
-    const previousScrollTop = scrollArea.scrollTop;
-    const previousScrollLeft = scrollArea.scrollLeft;
-    const ratio = nextZoom / previousZoom;
-    requestAnimationFrame(() => {
-      scrollArea.scrollTop = Math.max(0, (previousScrollTop + focusY) * ratio - focusY);
-      scrollArea.scrollLeft = Math.max(0, (previousScrollLeft + focusX) * ratio - focusX);
-    });
   };
 
   useEffect(() => {
@@ -142,6 +188,24 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
     zoomRef.current = zoom;
   }, [zoom]);
 
+  useLayoutEffect(() => {
+    const anchor = pendingZoomAnchorRef.current;
+    const scrollArea = scrollRef.current;
+    if (!anchor || !scrollArea) return;
+    pendingZoomAnchorRef.current = null;
+
+    const page = Array.from(scrollArea.querySelectorAll<HTMLElement>('[data-pdf-page]'))
+      .find((candidate) => Number(candidate.dataset.pdfPage) === anchor.pageNumber);
+    if (!page) return;
+
+    const areaRect = scrollArea.getBoundingClientRect();
+    const pageRect = page.getBoundingClientRect();
+    const anchorX = pageRect.left + anchor.pageX * pageRect.width - areaRect.left;
+    const anchorY = pageRect.top + anchor.pageY * pageRect.height - areaRect.top;
+    scrollArea.scrollLeft = Math.max(0, scrollArea.scrollLeft + anchorX - anchor.viewportX);
+    scrollArea.scrollTop = Math.max(0, scrollArea.scrollTop + anchorY - anchor.viewportY);
+  }, [zoom]);
+
   useEffect(() => {
     const scrollArea = scrollRef.current;
     if (!scrollArea) return;
@@ -157,12 +221,11 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
         distance: touchDistance(event.touches),
         zoom: zoomRef.current,
         currentZoom: zoomRef.current,
-        scrollTop: scrollArea.scrollTop,
-        scrollLeft: scrollArea.scrollLeft,
         centerX,
         centerY,
         originX: stackRect ? clientX - stackRect.left : centerX,
         originY: stackRect ? clientY - stackRect.top : centerY,
+        anchor: captureZoomAnchor(scrollArea, centerX, centerY),
         frameId: null,
       };
     };
@@ -187,15 +250,10 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
         clearStackPreview(scrollArea);
         return;
       }
-      applyStackPreview(scrollArea, pinch.zoom, pinch.currentZoom, pinch.originX, pinch.originY);
-      const ratio = pinch.currentZoom / pinch.zoom;
+      pendingZoomAnchorRef.current = pinch.anchor;
+      clearStackPreview(scrollArea);
       zoomRef.current = pinch.currentZoom;
       setZoom(pinch.currentZoom);
-      requestAnimationFrame(() => {
-        scrollArea.scrollTop = Math.max(0, (pinch.scrollTop + pinch.centerY) * ratio - pinch.centerY);
-        scrollArea.scrollLeft = Math.max(0, (pinch.scrollLeft + pinch.centerX) * ratio - pinch.centerX);
-        clearStackPreview(scrollArea);
-      });
     };
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey) return;
