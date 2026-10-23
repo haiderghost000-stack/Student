@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   FileText, LoaderCircle, Maximize2, Minus, Plus, X,
 } from 'lucide-react';
+import panzoom, { type PanZoom } from 'panzoom';
 import {
   getDocument, GlobalWorkerOptions, TextLayer,
   type PDFDocumentLoadingTask, type PDFDocumentProxy, type PDFPageProxy,
@@ -19,24 +20,11 @@ type ZoomAnchor = {
   viewportX: number;
   viewportY: number;
 };
-type PinchStart = {
-  distance: number;
-  zoom: number;
-  currentZoom: number;
-  centerX: number;
-  centerY: number;
-  originX: number;
-  originY: number;
-  anchor: ZoomAnchor | null;
-  frameId: number | null;
-} | null;
+type PinchGesture = { lastX: number; lastY: number } | null;
+type SingleTouchScroll = { lastX: number; lastY: number } | null;
 
 const clampZoom = (value: number) => Math.min(4, Math.max(0.5, Math.round(value * 100) / 100));
 const arabicTextPattern = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i;
-const touchDistance = (touches: TouchList) => Math.max(1, Math.hypot(
-  touches[0].clientX - touches[1].clientX,
-  touches[0].clientY - touches[1].clientY,
-));
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
 
 function captureZoomAnchor(scrollArea: HTMLElement, viewportX: number, viewportY: number): ZoomAnchor | null {
@@ -82,22 +70,6 @@ function captureZoomAnchor(scrollArea: HTMLElement, viewportX: number, viewportY
   };
 }
 
-function applyStackPreview(scrollArea: HTMLElement, baseZoom: number, previewZoom: number, originX: number, originY: number) {
-  const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
-  if (!stack) return;
-  stack.style.transformOrigin = `${originX}px ${originY}px`;
-  stack.style.transform = `scale(${previewZoom / baseZoom})`;
-  stack.style.willChange = 'transform';
-}
-
-function clearStackPreview(scrollArea: HTMLElement) {
-  const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
-  if (!stack) return;
-  stack.style.transform = '';
-  stack.style.transformOrigin = '';
-  stack.style.willChange = '';
-}
-
 function ensureZoomPanSpace(scrollArea: HTMLElement) {
   const stack = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack');
   if (!stack) return;
@@ -110,18 +82,40 @@ function ensureZoomPanSpace(scrollArea: HTMLElement) {
   stack.style.paddingRight = `${horizontalSpace}px`;
 }
 
+function clearPanzoomTransform(stack: HTMLElement) {
+  stack.style.transform = '';
+  stack.style.transformOrigin = '';
+  stack.style.willChange = '';
+}
+
+function restoreZoomAnchor(scrollArea: HTMLElement, anchor: ZoomAnchor) {
+  const page = Array.from(scrollArea.querySelectorAll<HTMLElement>('[data-pdf-page]'))
+    .find((candidate) => Number(candidate.dataset.pdfPage) === anchor.pageNumber);
+  if (!page) return;
+
+  const areaRect = scrollArea.getBoundingClientRect();
+  const pageRect = page.getBoundingClientRect();
+  const anchorX = pageRect.left + anchor.pageX * pageRect.width - areaRect.left;
+  const anchorY = pageRect.top + anchor.pageY * pageRect.height - areaRect.top;
+  scrollArea.scrollLeft = Math.max(0, scrollArea.scrollLeft + anchorX - anchor.viewportX);
+  scrollArea.scrollTop = Math.max(0, scrollArea.scrollTop + anchorY - anchor.viewportY);
+}
+
 export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
+  const [panzoomEpoch, setPanzoomEpoch] = useState(0);
   const [viewerWidth, setViewerWidth] = useState(0);
   const [renderReady, setRenderReady] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
   const pendingZoomAnchorRef = useRef<ZoomAnchor | null>(null);
-  const pinchRef = useRef<PinchStart>(null);
+  const pinchRef = useRef<PinchGesture>(null);
+  const singleTouchRef = useRef<SingleTouchScroll>(null);
+  const panzoomRef = useRef<PanZoom | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
   const zoomValueRef = useRef<HTMLSpanElement>(null);
@@ -206,68 +200,97 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
     const scrollArea = scrollRef.current;
     if (!anchor || !scrollArea) return;
     pendingZoomAnchorRef.current = null;
-
-    const page = Array.from(scrollArea.querySelectorAll<HTMLElement>('[data-pdf-page]'))
-      .find((candidate) => Number(candidate.dataset.pdfPage) === anchor.pageNumber);
-    if (!page) return;
-
-    const areaRect = scrollArea.getBoundingClientRect();
-    const pageRect = page.getBoundingClientRect();
-    const anchorX = pageRect.left + anchor.pageX * pageRect.width - areaRect.left;
-    const anchorY = pageRect.top + anchor.pageY * pageRect.height - areaRect.top;
-    scrollArea.scrollLeft = Math.max(0, scrollArea.scrollLeft + anchorX - anchor.viewportX);
-    scrollArea.scrollTop = Math.max(0, scrollArea.scrollTop + anchorY - anchor.viewportY);
+    restoreZoomAnchor(scrollArea, anchor);
   }, [zoom]);
 
   useEffect(() => {
     const scrollArea = scrollRef.current;
-    if (!scrollArea) return;
-    const onTouchStart = (event: TouchEvent) => {
+    const stack = scrollArea?.querySelector<HTMLElement>('.pdf-pages-stack');
+    if (!scrollArea || !stack || !pdfDocument) return;
+
+    const controller = panzoom(stack, {
+      minZoom: 0.5 / zoomRef.current,
+      maxZoom: 4 / zoomRef.current,
+      pinchSpeed: 1,
+      smoothScroll: false,
+      zoomDoubleClickSpeed: 1,
+      beforeWheel: () => true,
+      beforeMouseDown: () => true,
+      disableKeyboardInteraction: true,
+    });
+    panzoomRef.current = controller;
+
+    const onTouchStartCapture = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        const touch = event.touches[0];
+        singleTouchRef.current = { lastX: touch.clientX, lastY: touch.clientY };
+        event.stopPropagation();
+        pinchRef.current = null;
+        return;
+      }
       if (event.touches.length !== 2) return;
+
+      singleTouchRef.current = null;
       const rect = scrollArea.getBoundingClientRect();
-      const clientX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
-      const clientY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
-      const centerX = clientX - rect.left;
-      const centerY = clientY - rect.top;
-      const stackRect = scrollArea.querySelector<HTMLElement>('.pdf-pages-stack')?.getBoundingClientRect();
       pinchRef.current = {
-        distance: touchDistance(event.touches),
-        zoom: zoomRef.current,
-        currentZoom: zoomRef.current,
-        centerX,
-        centerY,
-        originX: stackRect ? clientX - stackRect.left : centerX,
-        originY: stackRect ? clientY - stackRect.top : centerY,
-        anchor: captureZoomAnchor(scrollArea, centerX, centerY),
-        frameId: null,
+        lastX: (event.touches[0].clientX + event.touches[1].clientX) / 2 - rect.left,
+        lastY: (event.touches[0].clientY + event.touches[1].clientY) / 2 - rect.top,
       };
     };
     const onTouchMove = (event: TouchEvent) => {
       const pinch = pinchRef.current;
-      if (event.touches.length !== 2 || !pinch) return;
-      event.preventDefault();
-      pinch.currentZoom = clampZoom(pinch.zoom * touchDistance(event.touches) / pinch.distance);
-      if (zoomValueRef.current) zoomValueRef.current.textContent = `${Math.round(pinch.currentZoom * 100)}٪`;
-      if (pinch.frameId !== null) cancelAnimationFrame(pinch.frameId);
-      pinch.frameId = requestAnimationFrame(() => {
-        applyStackPreview(scrollArea, pinch.zoom, pinch.currentZoom, pinch.originX, pinch.originY);
-        pinch.frameId = null;
-      });
-    };
-    const onTouchEnd = (event: TouchEvent) => {
-      const pinch = pinchRef.current;
-      if (event.touches.length >= 2 || !pinch) return;
-      pinchRef.current = null;
-      if (pinch.frameId !== null) cancelAnimationFrame(pinch.frameId);
-      if (pinch.currentZoom === pinch.zoom) {
-        clearStackPreview(scrollArea);
+      if (event.touches.length === 2 && pinch) {
+        const rect = scrollArea.getBoundingClientRect();
+        pinch.lastX = (event.touches[0].clientX + event.touches[1].clientX) / 2 - rect.left;
+        pinch.lastY = (event.touches[0].clientY + event.touches[1].clientY) / 2 - rect.top;
         return;
       }
-      pendingZoomAnchorRef.current = pinch.anchor;
-      clearStackPreview(scrollArea);
+
+      const singleTouch = singleTouchRef.current;
+      if (event.touches.length !== 1 || !singleTouch) return;
+      event.preventDefault();
+      const touch = event.touches[0];
+      scrollArea.scrollLeft -= touch.clientX - singleTouch.lastX;
+      scrollArea.scrollTop -= touch.clientY - singleTouch.lastY;
+      singleTouch.lastX = touch.clientX;
+      singleTouch.lastY = touch.clientY;
+    };
+    const finishPinch = (event: TouchEvent) => {
+      const pinch = pinchRef.current;
+      if (event.touches.length >= 2) return;
+      if (!pinch) {
+        if (event.touches.length === 0) singleTouchRef.current = null;
+        return;
+      }
+      pinchRef.current = null;
+      singleTouchRef.current = event.touches.length === 1
+        ? { lastX: event.touches[0].clientX, lastY: event.touches[0].clientY }
+        : null;
+
+      const areaRect = scrollArea.getBoundingClientRect();
+      const focus = event.touches.length === 1
+        ? { x: event.touches[0].clientX - areaRect.left, y: event.touches[0].clientY - areaRect.top }
+        : { x: pinch.lastX, y: pinch.lastY };
+      const anchor = captureZoomAnchor(scrollArea, focus.x, focus.y);
+      const nextZoom = clampZoom(zoomRef.current * controller.getTransform().scale);
+
+      if (panzoomRef.current === controller) {
+        controller.dispose();
+        panzoomRef.current = null;
+      }
+      clearPanzoomTransform(stack);
       ensureZoomPanSpace(scrollArea);
-      zoomRef.current = pinch.currentZoom;
-      setZoom(pinch.currentZoom);
+
+      if (nextZoom === zoomRef.current) {
+        if (anchor) restoreZoomAnchor(scrollArea, anchor);
+        if (zoomValueRef.current) zoomValueRef.current.textContent = `${Math.round(zoomRef.current * 100)}٪`;
+        setPanzoomEpoch((current) => current + 1);
+        return;
+      }
+
+      pendingZoomAnchorRef.current = anchor;
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
     };
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey) return;
@@ -276,19 +299,30 @@ export default function PdfReader({ file, name, onClose }: PdfReaderProps) {
       const rect = scrollArea.getBoundingClientRect();
       zoomTo(previousZoom * Math.exp(-event.deltaY * 0.002), event.clientX - rect.left, event.clientY - rect.top);
     };
-    scrollArea.addEventListener('touchstart', onTouchStart, { passive: true });
+
+    const onTransform = () => {
+      const currentZoom = clampZoom(zoomRef.current * controller.getTransform().scale);
+      if (zoomValueRef.current) zoomValueRef.current.textContent = `${Math.round(currentZoom * 100)}٪`;
+    };
+    controller.on('transform', onTransform);
+    scrollArea.addEventListener('touchstart', onTouchStartCapture, { capture: true, passive: true });
     scrollArea.addEventListener('touchmove', onTouchMove, { passive: false });
-    scrollArea.addEventListener('touchend', onTouchEnd, { passive: true });
-    scrollArea.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    scrollArea.addEventListener('touchend', finishPinch, { passive: true });
+    scrollArea.addEventListener('touchcancel', finishPinch, { passive: true });
     scrollArea.addEventListener('wheel', onWheel, { passive: false });
     return () => {
-      scrollArea.removeEventListener('touchstart', onTouchStart);
+      scrollArea.removeEventListener('touchstart', onTouchStartCapture, true);
       scrollArea.removeEventListener('touchmove', onTouchMove);
-      scrollArea.removeEventListener('touchend', onTouchEnd);
-      scrollArea.removeEventListener('touchcancel', onTouchEnd);
+      scrollArea.removeEventListener('touchend', finishPinch);
+      scrollArea.removeEventListener('touchcancel', finishPinch);
       scrollArea.removeEventListener('wheel', onWheel);
+      if (panzoomRef.current === controller) {
+        controller.dispose();
+        panzoomRef.current = null;
+      }
+      clearPanzoomTransform(stack);
     };
-  }, []);
+  }, [pdfDocument, zoom, panzoomEpoch]);
 
   useEffect(() => {
     const scrollArea = scrollRef.current;

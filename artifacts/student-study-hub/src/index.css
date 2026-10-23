@@ -225,7 +225,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .pdf-close-button:hover { background:#f0f5f0; }
 .pdf-reader-actions { flex:0 0 auto; }
 .pdf-zoom-controls { display:flex;align-items:center;gap:7px; }
-.pdf-document-scroll { position:relative;flex:1 1 auto;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;direction:ltr;background:#e8ebe7; }
+.pdf-document-scroll { position:relative;flex:1 1 auto;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:none;direction:ltr;background:#e8ebe7; }
 .pdf-pages-stack { display:flex;flex-direction:column;align-items:center;gap:18px;width:max-content;min-width:100%;margin-inline:auto;padding:18px 12px max(22px,env(safe-area-inset-bottom));direction:ltr; }
 .pdf-page-shell { position:relative;flex:0 0 auto;max-width:none;overflow:hidden;background:#fff;box-shadow:0 5px 23px #17271d22; }
 .pdf-page-canvas { display:block;max-width:none;background:#fff; }
