@@ -213,40 +213,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .pdf-name { font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .pdf-meta { font-size:10px;color:#98a49e;margin-top:3px; }
 .pdf-row-info { min-width:0;flex:1; }
-.pdf-fullscreen,.pdf-fullscreen-loading { position:fixed;inset:0;z-index:1000;width:100vw;height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#e9ece9;color:#202b25; }
-.pdf-fullscreen { isolation:isolate; }
-.pdf-fullscreen-loading { display:grid;place-content:center;justify-items:center;gap:12px;color:#70837a;font-size:13px; }
-.pdf-fullscreen-header { z-index:2;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:60px;padding:max(8px,env(safe-area-inset-top)) 16px 8px;background:#fff;border-bottom:1px solid #dce3dc;box-shadow:0 2px 12px #24382d0b; }
-.pdf-reader-title,.pdf-reader-actions { display:flex;align-items:center;gap:11px;min-width:0; }
-.pdf-reader-title { flex:1; }
-.pdf-reader-file-icon { width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px;background:#f5e6e1;color:#ae6a5d; }
-.pdf-reader-title strong { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700; }
-.pdf-close-button { width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border:1px solid #dfe6df;border-radius:10px;background:#fff;color:#52655a;cursor:pointer; }
-.pdf-close-button:hover { background:#f0f5f0; }
-.pdf-reader-actions { flex:0 0 auto; }
-.pdf-zoom-controls { display:flex;align-items:center;gap:7px; }
-.pdf-document-scroll { position:relative;flex:1 1 auto;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:none;direction:ltr;background:#e8ebe7; }
-.pdf-pages-stack { display:flex;flex-direction:column;align-items:center;gap:18px;width:max-content;min-width:100%;margin-inline:auto;padding:18px 12px max(22px,env(safe-area-inset-bottom));direction:ltr; }
-.pdf-page-shell { position:relative;flex:0 0 auto;max-width:none;overflow:hidden;background:#fff;box-shadow:0 5px 23px #17271d22; }
-.pdf-page-canvas { display:block;max-width:none;background:#fff; }
-.pdf-text-layer { position:absolute;inset:0;z-index:1;overflow:hidden;line-height:1;letter-spacing:normal;word-spacing:normal;text-align:initial;transform-origin:0 0;pointer-events:none;user-select:none;color-scheme:only light;--min-font-size:1;--text-scale-factor:calc(var(--total-scale-factor)*var(--min-font-size));--min-font-size-inv:calc(1/var(--min-font-size)); }
-.pdf-text-layer :is(span,br) { position:absolute;color:transparent;white-space:pre;transform-origin:0 0; }
-.pdf-text-layer > :not(.markedContent),.pdf-text-layer .markedContent span:not(.markedContent) { z-index:1;--font-height:0;font-size:calc(var(--text-scale-factor)*var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
-.pdf-text-layer .markedContent { display:contents; }
-.pdf-text-layer.arabic-readable :is(span,br) { color:#171d19; }
-.pdf-reader-state,.pdf-first-page-loading { z-index:3;position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;padding:24px;text-align:center;color:#71847a;font-size:13px; }
-.pdf-first-page-loading { inset:18px 12px auto;min-height:48px;width:max-content;margin-inline:auto;padding:10px 15px;border:1px solid #dfe6df;border-radius:12px;background:#fff;color:#71847a;box-shadow:0 4px 20px #14251a15; }
-.pdf-page-placeholder { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;color:#85968c;font-size:11px; }
-.pdf-page-error { padding:16px;color:#9e5d54;text-align:center;line-height:1.7; }
-.pdf-reader-error { max-width:430px;margin:auto;color:#897d78;line-height:1.8; }
-.pdf-error-mark { width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:#f5e6e1;color:#ae6a5d;font-weight:700;font-size:17px; }
-.pdf-loader { animation:pdf-spin 1.1s linear infinite;color:#5c927e; }
 @keyframes pdf-spin { to { transform:rotate(360deg); } }
-.viewer-control { width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--game-border);border-radius:8px;background:var(--paper);color:var(--ink);transition:background .15s,border-color .15s; }
-.viewer-control:not(:disabled):hover { background:var(--mint);border-color:#a9c7b2; }
-.viewer-control:disabled { opacity:.42; }
-.pdf-page-count,.pdf-zoom-value { color:var(--muted);font-size:11px;white-space:nowrap; }
-.pdf-zoom-value { min-width:42px;text-align:center;font-variant-numeric:tabular-nums; }
 .games-grid { display:grid;grid-template-columns:1fr 1fr;gap:18px; }
 .games-welcome { grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:146px;padding:25px 30px;border:1px solid #dce9df;border-radius:20px;background:radial-gradient(circle at 9% 45%,#ffffffa8 0 38px,transparent 39px),linear-gradient(115deg,#e9f3eb,#dcebe2 70%,#d5e7dc);overflow:hidden; }
 .game-kicker { display:inline-flex;align-items:center;gap:6px;color:#548375;font-size:11px;font-weight:700; }
@@ -488,16 +455,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .app-shell[data-theme='dark'] .pdf-retry-button { color:#b5d2c0;background:#22352a;border-color:#405848; }
 .app-shell[data-theme='dark'] .pdf-retry-button:not(:disabled):hover { background:#2c4635;border-color:#52715a; }
 .app-shell[data-theme='dark'] .pdf-error { color:#efaaa0; }
-.app-shell[data-theme='dark'] .pdf-fullscreen,.app-shell[data-theme='dark'] .pdf-fullscreen-loading { background:#131b17;color:#e5eee8; }
-.app-shell[data-theme='dark'] .pdf-fullscreen-header { background:#1c2a24;border-color:var(--line); }
-.app-shell[data-theme='dark'] .pdf-close-button { color:#c7d8cd;background:#1e2c25;border-color:#3a5044; }
-.app-shell[data-theme='dark'] .pdf-close-button:hover { background:#30483a; }
-.app-shell[data-theme='dark'] .viewer-control { color:#c7d8cd;background:#1e2c25;border-color:#3a5044; }
-.app-shell[data-theme='dark'] .viewer-control:not(:disabled):hover { background:#30483a;border-color:#55745d; }
-.app-shell[data-theme='dark'] .pdf-document-scroll { background:#151e19; }
-.app-shell[data-theme='dark'] .pdf-reader-state { color:#a4b7aa; }
-.app-shell[data-theme='dark'] .pdf-first-page-loading { color:#a4b7aa;background:#1c2a24;border-color:#34473d; }
-.app-shell[data-theme='dark'] .pdf-error-mark { color:#f0aaa0;background:#492e2c; }
 .app-shell[data-theme='dark'] .games-welcome { border-color:#344f3c;background:radial-gradient(circle at 9% 45%,#ffffff0b 0 38px,transparent 39px),linear-gradient(115deg,#1d3026,#243c2f 70%,#294435); }
 .app-shell[data-theme='dark'] .game-kicker,
 .app-shell[data-theme='dark'] .games-welcome-icon { color:#a6d8ba; }
@@ -572,21 +529,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .xo-board { grid-template-columns:repeat(3,minmax(58px,68px));gap:7px; }
   .xo-cell { border-radius:14px; }
   .memory-grid { gap:7px; }
-  .pdf-zoom-controls { gap:5px; }
-  .pdf-page-count { font-size:10px; }
   .math-options { gap:6px; }
   .math-option { min-height:38px; }
   .reaction-best { font-size:8px; }
 }
 @media(max-width:520px) {
-  .pdf-fullscreen-header { align-items:stretch;flex-direction:column;gap:7px;padding:max(8px,env(safe-area-inset-top)) 12px 8px; }
-  .pdf-reader-title { width:100%;gap:8px; }
-  .pdf-reader-title strong { font-size:12px; }
-  .pdf-close-button { margin-inline-start:auto; }
-  .pdf-reader-actions { justify-content:space-between; }
-  .pdf-pages-stack { gap:12px;padding:12px 8px max(18px,env(safe-area-inset-bottom)); }
 }
 @media(prefers-reduced-motion:reduce) {
   .game-card,.xo-cell,.memory-card,.memory-progress span,.game-action,.math-option,.reaction-pad,.number-secret-badge,.number-guess-submit { transition:none; }
-  .xo-turn:not(.finished) .turn-dot,.pdf-loader { animation:none; }
+  .xo-turn:not(.finished) .turn-dot { animation:none; }
 }

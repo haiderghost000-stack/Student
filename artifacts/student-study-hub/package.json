@@ -75,7 +75,6 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "panzoom": "^9.4.4",
     "pdfjs-dist": "^6.4.299"
   }
 }

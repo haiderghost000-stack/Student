@@ -1,4 +1,4 @@
 - [Student data storage](student-data-storage.md) — study content stays in browser storage; cross-device sync is a separate feature.
-- [PDF Arabic zoom rendering](pdf-arabic-zoom.md) — keep TextLayer font measurements aligned with the displayed font and serialize zoom redraws per page.
+- [PDF viewing flow](pdf-arabic-zoom.md) — library PDFs open in a new tab; PDF.js is kept for first-page covers, not an in-page reader.
 - [Dependency firewall recovery](dependency-firewall-recovery.md) — resolve 403s by updating the direct parent of a blocked stale transitive package; keep full setup intact.
 - [Student platform branding](student-platform-brand.md) — use “منصة الطالب” with a modern green identity and coral accent for install-facing surfaces.

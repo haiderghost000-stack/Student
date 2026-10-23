@@ -406,9 +406,6 @@ importers:
 
   artifacts/student-study-hub:
     dependencies:
-      panzoom:
-        specifier: ^9.4.4
-        version: 9.4.4
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
@@ -1808,9 +1805,6 @@ packages:
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
-  amator@1.1.0:
-    resolution: {integrity: sha512-V5+aH8pe+Z3u/UG3L3pG3BaFQGXAyXHVQDroRwjPHdh08bcUEchAVsU1MCuJSCaU5o60wTK6KaE6te5memzgYw==}
-
   argparse@2.0.1:
     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
 
@@ -1830,9 +1824,6 @@ packages:
     resolution: {integrity: sha512-uh8vpY/1/YyFkunIDFH/12p7/7VdPKA1hejMVEbdkEaWnUz0Hesvx5EbiU6XxjyHZIOju+ZMbQJkRh+es3/spQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
-
-  bezier-easing@2.1.0:
-    resolution: {integrity: sha512-gbIqZ/eslnUFC1tjEvtz0sgx+xTK20wDnYMIA27VA04R7w6xxXQPZDbibjA9DTWZRA2CXtwHykkVzlCaAJAZig==}
 
   body-parser@2.3.0:
     resolution: {integrity: sha512-2cGmJupaNgg+QUwVLAucDuWuoMZ6EX9iHDRswZ5lsNYEmwPaRknMPCLZz07yTzVq/83p4o/wzbDZbBrTvGGTIw==}
@@ -2554,9 +2545,6 @@ packages:
       react: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
       react-dom: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
 
-  ngraph.events@1.4.0:
-    resolution: {integrity: sha512-NeDGI4DSyjBNBRtA86222JoYietsmCXbs8CEB0dZ51Xeh4lhVl1y3wpWLumczvnha8sFQIW4E0vvVWwgmX2mGw==}
-
   node-releases@2.0.55:
     resolution: {integrity: sha512-mIrE/Cw9y+9Au6dS5vDKDhQza9YvG6w+ZrS6X+ZzA7yFW/soAeaups4Qzn1bL6g5FVy8WtP79+0j82oPIbqRjQ==}
     engines: {node: '>=18'}
@@ -2601,9 +2589,6 @@ packages:
   p-locate@6.0.0:
     resolution: {integrity: sha512-wPrq66Llhl7/4AGC6I+cqxT07LhXvWL08LNXz1fENOw0Ap4sRZZ/gZpTTJ5jpurzzzfS2W/Ge9BY3LgLjCShcw==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  panzoom@9.4.4:
-    resolution: {integrity: sha512-r1KfkNZvsBw59IPq7Yy+GWZnZE1YCG/t7aG6caSkij/TBqdxTzmxNTm/lHf3h6qlVMFisIGIO+lgS2Ym23PIoA==}
 
   parse-ms@4.0.0:
     resolution: {integrity: sha512-TXfryirbmq34y8QBwgqCVLi+8oA3oWx2eAnSn62ITyEhEYaWRlVZ2DvMM9eZbMs/RfxPu/PK/aBLyGj4IrqMHw==}
@@ -3171,9 +3156,6 @@ packages:
         optional: true
       yaml:
         optional: true
-
-  wheel@1.0.0:
-    resolution: {integrity: sha512-XiCMHibOiqalCQ+BaNSwRoZ9FDTAvOsXxGHXChBugewDj7HC8VBIER71dEOiRH1fSdLbRCQzngKTSiZ06ZQzeA==}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -4511,10 +4493,6 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  amator@1.1.0:
-    dependencies:
-      bezier-easing: 2.1.0
-
   argparse@2.0.1: {}
 
   aria-hidden@1.2.6:
@@ -4526,8 +4504,6 @@ snapshots:
   balanced-match@4.0.4: {}
 
   baseline-browser-mapping@2.11.21: {}
-
-  bezier-easing@2.1.0: {}
 
   body-parser@2.3.0:
     dependencies:
@@ -5116,8 +5092,6 @@ snapshots:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
 
-  ngraph.events@1.4.0: {}
-
   node-releases@2.0.55: {}
 
   npm-run-path@6.0.0:
@@ -5184,12 +5158,6 @@ snapshots:
   p-locate@6.0.0:
     dependencies:
       p-limit: 4.0.0
-
-  panzoom@9.4.4:
-    dependencies:
-      amator: 1.1.0
-      ngraph.events: 1.4.0
-      wheel: 1.0.0
 
   parse-ms@4.0.0: {}
 
@@ -5731,8 +5699,6 @@ snapshots:
       lightningcss: 1.32.0
       tsx: 4.23.13
       yaml: 2.9.0
-
-  wheel@1.0.0: {}
 
   which@2.0.2:
     dependencies:

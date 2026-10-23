@@ -1,11 +1,10 @@
-import { lazy, Suspense, type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlarmClock, ArrowLeft, Calculator, Check, CheckCheck, Clock3, Hash,
   FileText, Gamepad2, BookOpen, LayoutDashboard, ListTodo, LoaderCircle, MoreHorizontal, Pause,
   Moon, Pencil, Play, Plus, RotateCcw, Search, Settings2, StickyNote, Sun, Timer, Trash2, Upload, Zap,
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
-const PdfReader = lazy(() => import('./PdfReader'));
 const createPdfCover = async (file: Blob) => (await import('./pdfCover')).createPdfCover(file);
 
 type Task = { id: string; title: string; subject: string; dueDate: string; priority: string; completed: boolean };
@@ -114,8 +113,6 @@ function App() {
   const [taskFilter, setTaskFilter] = useState('الكل');
   const [search, setSearch] = useState('');
   const [pdfs, setPdfs] = useState<PdfMeta[]>([]);
-  const [activePdf, setActivePdf] = useState<PdfMeta | null>(null);
-  const [activePdfFile, setActivePdfFile] = useState<Blob | null>(null);
   const [pdfError, setPdfError] = useState('');
   const [pdfUploading, setPdfUploading] = useState(false);
   const [retryingCoverIds, setRetryingCoverIds] = useState<Set<string>>(() => new Set());
@@ -383,17 +380,44 @@ function App() {
       event.target.value = '';
     }
   };
-  const selectPdf = async (pdf: PdfMeta) => {
+  const openPdf = async (pdf: PdfMeta) => {
+    const pdfTab = window.open('', '_blank');
+    if (!pdfTab) {
+      setPdfError('تعذّر فتح تبويب جديد. اسمح بفتح النوافذ المنبثقة ثم أعد المحاولة.');
+      return;
+    }
+
+    pdfTab.opener = null;
+    pdfTab.document.title = `جارٍ فتح ${pdf.name}`;
+    const status = pdfTab.document.createElement('p');
+    status.textContent = 'جارٍ فتح ملف PDF…';
+    pdfTab.document.body.replaceChildren(status);
+
     try {
       const record = await fetchPdf(pdf.id);
-      if (!record) { setPdfError('لم نعثر على الملف المحفوظ.'); return; }
-      setActivePdfFile(record.file); setActivePdf(pdf); setPdfError('');
-    } catch { setPdfError('تعذّر فتح الملف.'); }
+      if (!record) {
+        pdfTab.close();
+        setPdfError('لم نعثر على الملف المحفوظ.');
+        return;
+      }
+
+      const fileUrl = URL.createObjectURL(record.file);
+      pdfTab.location.replace(fileUrl);
+      const cleanupTimer = window.setInterval(() => {
+        if (pdfTab.closed) {
+          window.clearInterval(cleanupTimer);
+          URL.revokeObjectURL(fileUrl);
+        }
+      }, 2000);
+      setPdfError('');
+    } catch {
+      pdfTab.close();
+      setPdfError('تعذّر فتح الملف في تبويب جديد.');
+    }
   };
   const deletePdf = async (pdf: PdfMeta) => {
     if (!window.confirm(`حذف «${pdf.name}» من مكتبتك؟`)) return;
     await removePdf(pdf.id); setPdfs(await listPdfs());
-    if (activePdf?.id === pdf.id) { setActivePdfFile(null); setActivePdf(null); }
     showToast('أُزيل الملف من مكتبتك.');
   };
   const setMode = (mode: 'focus' | 'break') => { setRunning(false); setTimerMode(mode); setSecondsLeft((mode === 'focus' ? focusMinutes : breakMinutes) * 60); };
@@ -545,7 +569,7 @@ function App() {
           {pdfs.length ? pdfs.map((pdf) => {
             const isRetrying = retryingCoverIds.has(pdf.id);
             return <div key={pdf.id} className="pdf-row">
-              <button onClick={() => selectPdf(pdf)} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}>
+              <button onClick={() => { void openPdf(pdf); }} style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, flex: 1, border: 0, background: 'transparent', textAlign: 'right', padding: 0 }}>
                 <span className="pdf-cover" aria-hidden="true">
                   {pdf.cover ? <img src={pdf.cover} alt="" loading="lazy" /> : <FileText size={18} />}
                   <span className="pdf-cover-page">1</span>
@@ -637,7 +661,6 @@ function App() {
         </section>
       </div>}
     </main>
-    {activePdf && activePdfFile && <Suspense fallback={<div className="pdf-fullscreen-loading" role="status"><LoaderCircle size={24} /> جارٍ تجهيز قارئ PDF…</div>}><PdfReader key={activePdf.id} file={activePdfFile} name={activePdf.name} onClose={() => { setActivePdfFile(null); setActivePdf(null); }} /></Suspense>}
     <nav className="mobile-nav">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><h2 id="modal-title">{modal === 'task' ? editingId ? 'تعديل المهمة' : 'مهمة جديدة' : editingId ? 'تعديل الملاحظة' : 'ملاحظة جديدة'}</h2><button className="small-icon" aria-label="إغلاق النافذة" onClick={() => setModal(null)}><X size={17} /></button></div>
       {modal === 'task' && <form onSubmit={saveTask}><div className="form-grid"><div className="form-field full"><label htmlFor="task-title">عنوان المهمة</label><input id="task-title" name="title" className="field" required defaultValue={tasks.find((task) => task.id === editingId)?.title || ''} placeholder="مثال: حل مسائل الفصل الثالث" /></div><div className="form-field"><label htmlFor="task-subject">المادة</label><select id="task-subject" name="subject" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.subject || subjects[0]}>{subjects.map((subject) => <option key={subject}>{subject}</option>)}</select></div><div className="form-field"><label htmlFor="task-date">موعد الإنجاز</label><input id="task-date" name="dueDate" type="date" className="field" defaultValue={tasks.find((task) => task.id === editingId)?.dueDate || ''} /></div><div className="form-field full"><label htmlFor="task-priority">الأولوية</label><select id="task-priority" name="priority" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.priority || 'متوسطة'}><option>عالية</option><option>متوسطة</option><option>منخفضة</option></select></div></div><div className="modal-actions"><button className="primary-btn" type="submit"><Check size={15} /> حفظ المهمة</button><button type="button" className="soft-btn" onClick={() => setModal(null)}>إلغاء</button></div></form>}
