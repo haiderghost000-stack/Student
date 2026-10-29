@@ -3,8 +3,8 @@ name: PDF viewing flow
 description: Product choice for opening stored PDFs from the student's library.
 ---
 
-Open a student's stored PDF in a new browser tab so the browser or phone can use its native PDF viewer. Open the blank tab synchronously from the user's click before awaiting the IndexedDB read, then navigate it to a Blob URL for the stored file. Keep that URL valid while the tab is open and revoke it when the tab closes. PDF.js remains in use only to generate the first-page library cover. Keep PDF bytes in browser storage; do not upload them.
+Open a student's stored PDF inside a full-screen in-app overlay using the browser's native PDF viewer in an iframe. Keep the PDF bytes in IndexedDB and create a Blob URL only while the viewer is open; revoke it on close. Keep PDF.js for first-page library covers. Do not add custom page transforms or pinch handlers: let the browser viewer own zoom, touch anchoring, and vertical scrolling. Keep an external-open link as a fallback for browsers that cannot embed PDFs.
 
-**Why:** The user asked to remove the in-page PDF reader and open files in a new tab or the phone's default PDF handler. This avoids custom viewer behavior while preserving the existing local-only document storage.
+**Why:** The user later explicitly requested in-app reading with stable mobile pinch zoom. The native viewer avoids the anchor-position bugs caused by custom transformations while keeping PDFs local.
 
-**How to apply:** Do not reintroduce an in-page PDF reader or pan/zoom library unless the user explicitly requests it. When changing the library open flow, preserve the synchronous popup gesture, local IndexedDB storage, and Blob URL lifetime.
+**How to apply:** Preserve local IndexedDB storage and Blob URL cleanup. Do not add a sandbox attribute to the PDF iframe, because it can prevent the browser's native viewer from rendering.

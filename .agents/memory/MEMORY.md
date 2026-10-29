@@ -1,5 +1,5 @@
 - [Student data storage](student-data-storage.md) — study content stays in browser storage; cross-device sync is a separate feature.
-- [PDF viewing flow](pdf-arabic-zoom.md) — library PDFs open in a new tab; PDF.js is kept for first-page covers, not an in-page reader.
+- [PDF viewing flow](pdf-arabic-zoom.md) — show local PDFs in a full-screen in-app iframe; delegate pinch zoom and scrolling to the browser-native viewer.
 - [Dependency firewall recovery](dependency-firewall-recovery.md) — resolve 403s by updating the direct parent of a blocked stale transitive package; keep full setup intact.
 - [Student platform branding](student-platform-brand.md) — use “منصة الطالب” with a modern green identity and coral accent for install-facing surfaces.
 - [Background timer](background-timer.md) — persist an absolute deadline and recalculate after tab switches or reopening instead of counting throttled ticks.

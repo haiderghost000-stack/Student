@@ -195,6 +195,19 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .session-info { margin-top:19px;padding:14px;border-radius:12px;background:#f1f5ef;font-size:11px;color:#789087;line-height:1.7; }
 .pdf-library { width:min(100%,980px);margin-inline:auto; }
 .pdf-list { width:100%;padding:18px; }
+.pdf-embedded-viewer { position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;overflow:hidden;background:#eef2ed;color:var(--ink);padding-bottom:env(safe-area-inset-bottom);overscroll-behavior:contain; }
+.pdf-embedded-toolbar { min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:max(8px,env(safe-area-inset-top)) 16px 9px;border-bottom:1px solid var(--line);background:var(--paper);box-shadow:0 3px 14px #203b2b12; }
+.pdf-embedded-title { min-width:0;display:flex;align-items:center;gap:10px; }
+.pdf-embedded-icon { width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;border:1px solid #e8d2ce;border-radius:11px;background:#f8eeeb;color:#a56d62; }
+.pdf-embedded-title-copy { min-width:0;display:flex;flex-direction:column;gap:2px; }
+.pdf-embedded-title-copy strong { overflow:hidden;color:var(--ink);font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
+.pdf-embedded-title-copy small { color:var(--muted);font-size:10px; }
+.pdf-embedded-actions { display:flex;align-items:center;gap:8px;flex:0 0 auto; }
+.pdf-embedded-open { display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 11px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--teal-dark);font-size:10px;font-weight:600;text-decoration:none;white-space:nowrap; }
+.pdf-embedded-open:hover { background:var(--mint); }
+.pdf-embedded-close { width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--muted); }
+.pdf-embedded-close:hover { border-color:#c8d7ca;background:var(--mint);color:var(--ink); }
+.pdf-embedded-frame { display:block;flex:1;width:100%;height:0;min-height:0;border:0;background:#fff;touch-action:auto;overscroll-behavior:contain; }
 .upload-zone { border:1px dashed #cbd9cd;background:#f4f7f2;border-radius:13px;padding:17px;text-align:center;color:#81958b;cursor:pointer;margin-bottom:14px;transition:background .2s; }
 .upload-zone:hover { background:#eaf2e9; }
 .upload-zone strong { display:block;color:#55766b;font-size:12px;margin:8px 0 4px; }
@@ -455,6 +468,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .app-shell[data-theme='dark'] .pdf-retry-button { color:#b5d2c0;background:#22352a;border-color:#405848; }
 .app-shell[data-theme='dark'] .pdf-retry-button:not(:disabled):hover { background:#2c4635;border-color:#52715a; }
 .app-shell[data-theme='dark'] .pdf-error { color:#efaaa0; }
+.app-shell[data-theme='dark'] .pdf-embedded-viewer { background:#121b16; }
+.app-shell[data-theme='dark'] .pdf-embedded-toolbar { border-color:#34473d;background:#17231d;box-shadow:0 3px 14px #00000025; }
+.app-shell[data-theme='dark'] .pdf-embedded-icon { border-color:#65413e;background:#392b2a;color:#e6a89d; }
+.app-shell[data-theme='dark'] .pdf-embedded-open,
+.app-shell[data-theme='dark'] .pdf-embedded-close { border-color:#3a5044;background:#22352a;color:#bdd2c4; }
+.app-shell[data-theme='dark'] .pdf-embedded-open:hover,
+.app-shell[data-theme='dark'] .pdf-embedded-close:hover { border-color:#52715a;background:#2c4635;color:#e5eee8; }
 .app-shell[data-theme='dark'] .games-welcome { border-color:#344f3c;background:radial-gradient(circle at 9% 45%,#ffffff0b 0 38px,transparent 39px),linear-gradient(115deg,#1d3026,#243c2f 70%,#294435); }
 .app-shell[data-theme='dark'] .game-kicker,
 .app-shell[data-theme='dark'] .games-welcome-icon { color:#a6d8ba; }
@@ -534,6 +554,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .reaction-best { font-size:8px; }
 }
 @media(max-width:520px) {
+  .pdf-embedded-toolbar { gap:8px;padding-inline:10px; }
+  .pdf-embedded-title { gap:8px; }
+  .pdf-embedded-icon { width:34px;height:34px; }
+  .pdf-embedded-actions { gap:6px; }
+  .pdf-embedded-open { min-height:34px;padding-inline:8px;font-size:9px; }
+  .pdf-embedded-close { width:36px;height:36px; }
 }
 @media(prefers-reduced-motion:reduce) {
   .game-card,.xo-cell,.memory-card,.memory-progress span,.game-action,.math-option,.reaction-pad,.number-secret-badge,.number-guess-submit { transition:none; }
