@@ -12,6 +12,7 @@ type Note = { id: string; title: string; content: string; subject: string; updat
 type PdfMeta = { id: string; name: string; size: number; addedAt: string; cover?: string };
 type PdfRecord = PdfMeta & { file: File };
 type MathQuestion = { first: number; second: number; operation: '+' | '−' | '×'; answer: number; options: number[] };
+type TimerState = { mode: 'focus' | 'break'; secondsLeft: number; running: boolean; endsAt: number | null };
 type XoMark = 'X' | 'O';
 type XoBoard = (XoMark | null)[];
 type NumberFeedback = 'idle' | 'higher' | 'lower' | 'won' | 'error';
@@ -116,9 +117,10 @@ function App() {
   const [pdfError, setPdfError] = useState('');
   const [pdfUploading, setPdfUploading] = useState(false);
   const [retryingCoverIds, setRetryingCoverIds] = useState<Set<string>>(() => new Set());
-  const [timerMode, setTimerMode] = useState<'focus' | 'break'>('focus');
-  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
-  const [running, setRunning] = useState(false);
+  const [timerState, setTimerState] = usePersisted<TimerState>('timer-session', { mode: 'focus', secondsLeft: focusMinutes * 60, running: false, endsAt: null });
+  const timerMode = timerState.mode;
+  const secondsLeft = timerState.secondsLeft;
+  const running = timerState.running;
   const alarmAudioContextRef = useRef<AudioContext | null>(null);
   const timerCompletionHandledRef = useRef(false);
   const [xo, setXo] = useState<XoBoard>(Array(9).fill(null));
@@ -277,14 +279,30 @@ function App() {
     return () => clearTimeout(timeout);
   }, [reactionStage]);
   useEffect(() => {
-    if (!running) return;
-    const interval = setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
-    return () => clearInterval(interval);
-  }, [running]);
+    const deadline = timerState.endsAt;
+    if (!timerState.running || deadline === null) return;
+    const syncRemainingTime = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setTimerState((current) => {
+        if (!current.running || current.endsAt !== deadline || current.secondsLeft === remaining) return current;
+        return { ...current, secondsLeft: remaining };
+      });
+    };
+    syncRemainingTime();
+    const interval = window.setInterval(syncRemainingTime, 1000);
+    document.addEventListener('visibilitychange', syncRemainingTime);
+    window.addEventListener('focus', syncRemainingTime);
+    window.addEventListener('pageshow', syncRemainingTime);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', syncRemainingTime);
+      window.removeEventListener('focus', syncRemainingTime);
+      window.removeEventListener('pageshow', syncRemainingTime);
+    };
+  }, [timerState.running, timerState.endsAt, setTimerState]);
   useEffect(() => {
     if (!running || secondsLeft > 0 || timerCompletionHandledRef.current) return;
     timerCompletionHandledRef.current = true;
-    setRunning(false);
     playTimerAlarm();
     if (timerMode === 'focus') {
       setStats((old) => {
@@ -292,16 +310,13 @@ function App() {
         const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
         return { sessions: old.sessions + 1, focusSeconds: old.focusSeconds + focusMinutes * 60, streak: old.lastStudyDay === today ? old.streak : old.lastStudyDay === yesterday ? old.streak + 1 : 1, lastStudyDay: today };
       });
-      setTimerMode('break');
-      setSecondsLeft(breakMinutes * 60);
+      setTimerState({ mode: 'break', secondsLeft: breakMinutes * 60, running: false, endsAt: null });
       showToast('أحسنت، حان وقت استراحة قصيرة.');
       return;
     }
-    setTimerMode('focus');
-    setSecondsLeft(focusMinutes * 60);
+    setTimerState({ mode: 'focus', secondsLeft: focusMinutes * 60, running: false, endsAt: null });
     showToast('انتهت الاستراحة، مستعد لجولة جديدة؟');
-  }, [running, secondsLeft, timerMode, focusMinutes, breakMinutes]);
-  useEffect(() => { if (!running) setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); }, [focusMinutes, breakMinutes, timerMode, running]);
+  }, [running, secondsLeft, timerMode, focusMinutes, breakMinutes, setTimerState]);
   const xoWinnerMark = xoWinner(xo);
   const xoTurn: XoMark = xo.filter((mark) => mark !== null).length % 2 === 0 ? 'X' : 'O';
   const xoDraw = !xoWinnerMark && xo.every((mark) => mark !== null);
@@ -420,11 +435,38 @@ function App() {
     await removePdf(pdf.id); setPdfs(await listPdfs());
     showToast('أُزيل الملف من مكتبتك.');
   };
-  const setMode = (mode: 'focus' | 'break') => { setRunning(false); setTimerMode(mode); setSecondsLeft((mode === 'focus' ? focusMinutes : breakMinutes) * 60); };
-  const resetTimer = () => { setRunning(false); setSecondsLeft((timerMode === 'focus' ? focusMinutes : breakMinutes) * 60); };
+  const setMode = (mode: 'focus' | 'break') => {
+    timerCompletionHandledRef.current = false;
+    setTimerState({ mode, running: false, secondsLeft: (mode === 'focus' ? focusMinutes : breakMinutes) * 60, endsAt: null });
+  };
+  const resetTimer = () => {
+    timerCompletionHandledRef.current = false;
+    setTimerState({ ...timerState, running: false, secondsLeft: (timerMode === 'focus' ? focusMinutes : breakMinutes) * 60, endsAt: null });
+  };
   const adjustDuration = (mode: 'focus' | 'break', amount: number) => {
-    const setter = mode === 'focus' ? setFocusMinutes : setBreakMinutes;
-    setter((value: number) => Math.min(90, Math.max(1, value + amount)));
+    const currentDuration = mode === 'focus' ? focusMinutes : breakMinutes;
+    const nextDuration = Math.min(90, Math.max(1, currentDuration + amount));
+    if (mode === 'focus') setFocusMinutes(nextDuration);
+    else setBreakMinutes(nextDuration);
+    if (!running) {
+      const activeDuration = timerMode === mode ? nextDuration : timerMode === 'focus' ? focusMinutes : breakMinutes;
+      setTimerState({ ...timerState, secondsLeft: activeDuration * 60, endsAt: null });
+    }
+  };
+  const toggleTimer = () => {
+    if (running) {
+      const remaining = timerState.endsAt === null ? secondsLeft : Math.max(0, Math.ceil((timerState.endsAt - Date.now()) / 1000));
+      if (remaining === 0) {
+        setTimerState({ ...timerState, secondsLeft: 0 });
+        return;
+      }
+      setTimerState({ ...timerState, running: false, secondsLeft: remaining, endsAt: null });
+      return;
+    }
+    if (secondsLeft <= 0) return;
+    unlockTimerAudio();
+    timerCompletionHandledRef.current = false;
+    setTimerState({ ...timerState, running: true, endsAt: Date.now() + secondsLeft * 1000 });
   };
   const timerDisplay = `${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`;
   const makeMemory = (pairs = memoryPairs) => {
@@ -549,8 +591,27 @@ function App() {
       {section === 'notes' && <div className="content">{notes.length ? <div className="notes-grid">{notes.map((note) => <article key={note.id} className="panel note-card" onClick={() => openModal('note', note.id)}><div className="note-card-top"><span className="note-subject">{note.subject}</span><button className="small-icon" aria-label="حذف الملاحظة" onClick={(event) => { event.stopPropagation(); deleteNote(note.id); }}><Trash2 size={14} /></button></div><h3>{note.title}</h3><p className="note-preview">{note.content || 'لا يوجد نص بعد.'}</p><div className="note-date">آخر تحديث · {new Intl.DateTimeFormat('ar', { day: 'numeric', month: 'long' }).format(new Date(note.updatedAt))}</div></article>)}</div> : <div className="panel"><div className="empty"><div className="empty-icon"><StickyNote size={21} /></div><strong>دفترك ما زال ينتظر أول فكرة</strong><p>دوّن شرحاً، سؤالاً أو فكرة تخشى أن تنساها.</p><button className="primary-btn" style={{ marginTop: 16 }} onClick={() => openModal('note')}><Plus size={15} /> اكتب ملاحظة</button></div></div>}</div>}
 
       {section === 'timer' && <div className="content timer-layout">
-        <section className="panel timer-main"><div className="timer-core"><div className="mode-switch"><button className={timerMode === 'focus' ? 'active' : ''} onClick={() => setMode('focus')}>تركيز</button><button className={timerMode === 'break' ? 'active' : ''} onClick={() => setMode('break')}>استراحة</button></div><div className="timer-display">{timerDisplay}</div><div className="timer-caption">{running ? timerMode === 'focus' ? 'أنت في جلسة تركيز، أحسنت.' : 'خذ نفساً عميقاً.' : 'كل دقيقة تمنحها لنفسك تستحق.'}</div><div className="timer-actions"><button className="round-btn" aria-label="إعادة ضبط المؤقت" onClick={resetTimer}><RotateCcw size={17} /></button><button className="round-btn play" aria-label={running ? 'إيقاف مؤقت' : 'ابدأ المؤقت'} onClick={() => { if (!running) { unlockTimerAudio(); timerCompletionHandledRef.current = false; } setRunning((value) => !value); }}>{running ? <Pause size={19} /> : <Play size={19} />}</button><button className="round-btn" aria-label="انتقل إلى الوضع التالي" onClick={() => setMode(timerMode === 'focus' ? 'break' : 'focus')}><ArrowLeft size={17} /></button></div></div></section>
-        <section className="panel timer-settings"><div className="section-heading"><h2>تخصيص وقتك</h2><Settings2 size={17} color="#81948a" /></div>{([{ mode: 'focus' as const, label: 'مدة التركيز', value: focusMinutes }, { mode: 'break' as const, label: 'مدة الاستراحة', value: breakMinutes }]).map((item) => <div className="duration-row" key={item.mode}><span>{item.label}</span><div className="duration-control"><button aria-label={`تقليل ${item.label}`} onClick={() => adjustDuration(item.mode, -1)}><Minus size={13} /></button><b>{item.value}</b><button aria-label={`زيادة ${item.label}`} onClick={() => adjustDuration(item.mode, 1)}><Plus size={13} /></button><small style={{ color: '#94a19a' }}>دقيقة</small></div></div>)}<div className="session-info"><Clock3 size={14} style={{ verticalAlign: 'middle', marginLeft: 5 }} /> عند انتهاء كل فترة، يصدر تنبيه صوتي لمدة 5 ثوانٍ ثم ينتقل المؤقت إلى الوضع التالي. تُحفظ تفضيلاتك وجلساتك على هذا الجهاز.</div><div style={{ marginTop: 17, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8b9a92' }}><span>جلسات مكتملة</span><strong style={{ color: '#587a6d' }}>{stats.sessions}</strong></div></section>
+        <section className="panel timer-main">
+          <div className="timer-core">
+            <div className="mode-switch">
+              <button className={timerMode === 'focus' ? 'active' : ''} onClick={() => setMode('focus')}>تركيز</button>
+              <button className={timerMode === 'break' ? 'active' : ''} onClick={() => setMode('break')}>استراحة</button>
+            </div>
+            <div className="timer-display">{timerDisplay}</div>
+            <div className="timer-caption">{running ? timerMode === 'focus' ? 'أنت في جلسة تركيز، أحسنت.' : 'خذ نفساً عميقاً.' : 'كل دقيقة تمنحها لنفسك تستحق.'}</div>
+            <div className="timer-actions">
+              <button className="round-btn" aria-label="إعادة ضبط المؤقت" onClick={resetTimer}><RotateCcw size={17} /></button>
+              <button className="round-btn play" aria-label={running ? 'إيقاف مؤقت' : 'ابدأ المؤقت'} onClick={toggleTimer}>{running ? <Pause size={19} /> : <Play size={19} />}</button>
+              <button className="round-btn" aria-label="انتقل إلى الوضع التالي" onClick={() => setMode(timerMode === 'focus' ? 'break' : 'focus')}><ArrowLeft size={17} /></button>
+            </div>
+          </div>
+        </section>
+        <section className="panel timer-settings">
+          <div className="section-heading"><h2>تخصيص وقتك</h2><Settings2 size={17} color="#81948a" /></div>
+          {([{ mode: 'focus' as const, label: 'مدة التركيز', value: focusMinutes }, { mode: 'break' as const, label: 'مدة الاستراحة', value: breakMinutes }]).map((item) => <div className="duration-row" key={item.mode}><span>{item.label}</span><div className="duration-control"><button aria-label={`تقليل ${item.label}`} onClick={() => adjustDuration(item.mode, -1)}><Minus size={13} /></button><b>{item.value}</b><button aria-label={`زيادة ${item.label}`} onClick={() => adjustDuration(item.mode, 1)}><Plus size={13} /></button><small style={{ color: '#94a19a' }}>دقيقة</small></div></div>)}
+          <div className="session-info"><Clock3 size={14} style={{ verticalAlign: 'middle', marginLeft: 5 }} /> يستمر المؤقّت عند مغادرة التطبيق أو إغلاقه، ويُستعاد عند العودة. قد يمنع المتصفح تشغيل التنبيه الصوتي إذا كانت الصفحة مغلقة.</div>
+          <div style={{ marginTop: 17, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8b9a92' }}><span>جلسات مكتملة</span><strong style={{ color: '#587a6d' }}>{stats.sessions}</strong></div>
+        </section>
       </div>}
 
       {section === 'library' && <div className="content pdf-library">
