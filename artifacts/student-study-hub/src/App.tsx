@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlarmClock, ArrowLeft, Calculator, Check, CheckCheck, Clock3, Hash,
   FileText, Gamepad2, BookOpen, LayoutDashboard, ListTodo, LoaderCircle, MoreHorizontal, Pause,
@@ -6,6 +6,7 @@ import {
   X, Minus, Sparkles, Target, CalendarDays, Flame, NotebookPen, Library,
 } from 'lucide-react';
 const createPdfCover = async (file: Blob) => (await import('./pdfCover')).createPdfCover(file);
+const PdfReader = lazy(() => import('./PdfReader'));
 
 type Task = { id: string; title: string; subject: string; dueDate: string; priority: string; completed: boolean };
 type Note = { id: string; title: string; content: string; subject: string; updatedAt: string };
@@ -118,7 +119,7 @@ function App() {
   const [pdfUploading, setPdfUploading] = useState(false);
   const [pdfOpeningId, setPdfOpeningId] = useState<string | null>(null);
   const [activePdf, setActivePdf] = useState<PdfMeta | null>(null);
-  const [activePdfUrl, setActivePdfUrl] = useState<string | null>(null);
+  const [activePdfFile, setActivePdfFile] = useState<File | null>(null);
   const [retryingCoverIds, setRetryingCoverIds] = useState<Set<string>>(() => new Set());
   const [timerState, setTimerState] = usePersisted<TimerState>('timer-session', { mode: 'focus', secondsLeft: focusMinutes * 60, running: false, endsAt: null });
   const timerMode = timerState.mode;
@@ -151,16 +152,6 @@ function App() {
   const reactionReadyAt = useRef(0);
   const coverRetryJobs = useRef(new Map<string, Promise<void>>());
   const pdfOpenInFlightRef = useRef(false);
-
-  useEffect(() => {
-    if (!activePdfUrl) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      URL.revokeObjectURL(activePdfUrl);
-    };
-  }, [activePdfUrl]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -420,9 +411,8 @@ function App() {
         setPdfError('لم نعثر على الملف المحفوظ.');
         return;
       }
-      const fileUrl = URL.createObjectURL(record.file);
       setActivePdf(pdf);
-      setActivePdfUrl(fileUrl);
+      setActivePdfFile(record.file);
     } catch {
       setPdfError('تعذّر فتح الملف داخل التطبيق.');
     } finally {
@@ -722,19 +712,35 @@ function App() {
         </section>
       </div>}
     </main>
-    {activePdf && activePdfUrl && <section className="pdf-embedded-viewer" role="dialog" aria-modal="true" aria-labelledby="pdf-viewer-title" dir="rtl">
-      <header className="pdf-embedded-toolbar">
-        <div className="pdf-embedded-title">
-          <span className="pdf-embedded-icon"><FileText size={18} /></span>
-          <span className="pdf-embedded-title-copy"><strong id="pdf-viewer-title">{activePdf.name}</strong><small>عارض PDF المدمج في المتصفح</small></span>
+    {activePdf && activePdfFile && <Suspense fallback={
+      <section className="pdf-reader" role="dialog" aria-modal="true" aria-labelledby="pdf-reader-loading-title" dir="rtl">
+        <header className="pdf-reader-header">
+          <div className="pdf-reader-heading">
+            <span className="pdf-reader-file-icon"><FileText size={18} /></span>
+            <div className="pdf-reader-title-copy">
+              <strong id="pdf-reader-loading-title">{activePdf.name}</strong>
+              <small>قارئ PDF داخل التطبيق</small>
+            </div>
+          </div>
+          <button className="pdf-reader-close" type="button" aria-label="إغلاق قارئ PDF" onClick={() => { setActivePdf(null); setActivePdfFile(null); }}>
+            <X size={19} />
+          </button>
+        </header>
+        <div className="pdf-reader-state" style={{ flex: 1 }}>
+          <LoaderCircle className="pdf-reader-spinner" size={28} />
+          <span>جارٍ تجهيز قارئ الملف…</span>
         </div>
-        <div className="pdf-embedded-actions">
-          <a className="pdf-embedded-open" href={activePdfUrl} target="_blank" rel="noreferrer">فتح في عارض الجهاز</a>
-          <button className="pdf-embedded-close" aria-label="إغلاق قارئ PDF" onClick={() => { setActivePdf(null); setActivePdfUrl(null); }}><X size={18} /></button>
-        </div>
-      </header>
-      <iframe key={activePdf.id} className="pdf-embedded-frame" src={activePdfUrl} title={`ملف PDF: ${activePdf.name}`} allowFullScreen referrerPolicy="no-referrer" />
-    </section>}
+      </section>
+    }>
+      <PdfReader
+        file={activePdfFile}
+        fileName={activePdf.name}
+        onClose={() => {
+          setActivePdf(null);
+          setActivePdfFile(null);
+        }}
+      />
+    </Suspense>}
     <nav className="mobile-nav">{navItems.map(({ id, label, icon: Icon }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={18} /><span>{label}</span></button>)}</nav>
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><h2 id="modal-title">{modal === 'task' ? editingId ? 'تعديل المهمة' : 'مهمة جديدة' : editingId ? 'تعديل الملاحظة' : 'ملاحظة جديدة'}</h2><button className="small-icon" aria-label="إغلاق النافذة" onClick={() => setModal(null)}><X size={17} /></button></div>
       {modal === 'task' && <form onSubmit={saveTask}><div className="form-grid"><div className="form-field full"><label htmlFor="task-title">عنوان المهمة</label><input id="task-title" name="title" className="field" required defaultValue={tasks.find((task) => task.id === editingId)?.title || ''} placeholder="مثال: حل مسائل الفصل الثالث" /></div><div className="form-field"><label htmlFor="task-subject">المادة</label><select id="task-subject" name="subject" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.subject || subjects[0]}>{subjects.map((subject) => <option key={subject}>{subject}</option>)}</select></div><div className="form-field"><label htmlFor="task-date">موعد الإنجاز</label><input id="task-date" name="dueDate" type="date" className="field" defaultValue={tasks.find((task) => task.id === editingId)?.dueDate || ''} /></div><div className="form-field full"><label htmlFor="task-priority">الأولوية</label><select id="task-priority" name="priority" className="select-field" defaultValue={tasks.find((task) => task.id === editingId)?.priority || 'متوسطة'}><option>عالية</option><option>متوسطة</option><option>منخفضة</option></select></div></div><div className="modal-actions"><button className="primary-btn" type="submit"><Check size={15} /> حفظ المهمة</button><button type="button" className="soft-btn" onClick={() => setModal(null)}>إلغاء</button></div></form>}
